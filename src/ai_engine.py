@@ -1,0 +1,163 @@
+"""
+AI Engine – Multi-provider abstraction for PII entity detection.
+Supports OpenAI (ChatGPT), Anthropic (Claude) and Google (Gemini).
+"""
+
+import json
+import re
+from typing import Dict, List, Tuple, Optional
+
+# ---------------------------------------------------------------------------
+# Prompt that instructs the AI to find all PII entities
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROMPT = """Du bist ein Experte für Datenanonymisierung. Deine Aufgabe ist es, in einem gegebenen Text alle personenbezogenen und identifizierenden Daten zu finden.
+
+Du musst folgende Kategorien erkennen – in ALLEN Sprachen, die im Text vorkommen:
+
+1. VORNAME – Vornamen von Personen
+2. NACHNAME – Nachnamen von Personen
+3. STRASSE – Straßennamen
+4. HAUSNUMMER – Hausnummern
+5. STADT – Städte / Orte
+6. PLZ – Postleitzahlen
+7. LAND – Länder
+8. KONTONUMMER – Kontonummern, IBANs, BICs
+9. EMAIL – E-Mail-Adressen
+10. TELEFON – Telefonnummern
+11. KRYPTO_ADRESSE – Bitcoin-Adressen oder andere Kryptowährungs-Adressen
+12. UNTERNEHMEN – Firmennamen (GmbH, AG, Ltd, Inc, SE, OG, KG, etc.)
+13. GRUNDSTUECK – Grundstücksbezeichnungen, Parzellen, Flurnummern, Grundbucheinträge
+14. GEBURTSDATUM – Geburtsdaten von Personen
+15. SOZIALVERSICHERUNG – Sozialversicherungsnummern
+16. STEUERNUMMER – Steuernummern, UID-Nummern
+17. AUSWEISNUMMER – Reisepass-, Personalausweis-, Führerscheinnummern
+
+WICHTIGE REGELN:
+- Gleiche Entitäten (z.B. derselbe Vorname "Max" an mehreren Stellen) sollen als EINE Entität behandelt werden.
+- Gib NUR die Entitäten zurück, die tatsächlich im Text vorkommen.
+- Gib die Entitäten EXAKT so zurück, wie sie im Text stehen (gleiche Schreibweise, Groß-/Kleinschreibung).
+- Erkenne Entitäten in ALLEN Sprachen (Deutsch, Englisch, Französisch, etc.).
+- Ignoriere allgemeine Begriffe die keine konkreten PII sind (z.B. "Straße" allein ohne Namen).
+
+Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im folgenden Format, ohne weitere Erklärung:
+
+{
+  "entities": [
+    {"text": "Max", "category": "VORNAME"},
+    {"text": "Mustermann", "category": "NACHNAME"},
+    {"text": "Musterstraße", "category": "STRASSE"},
+    {"text": "42", "category": "HAUSNUMMER"},
+    {"text": "Berlin", "category": "STADT"},
+    {"text": "10115", "category": "PLZ"},
+    {"text": "DE89370400440532013000", "category": "KONTONUMMER"},
+    {"text": "max@example.com", "category": "EMAIL"},
+    {"text": "Muster GmbH", "category": "UNTERNEHMEN"}
+  ]
+}"""
+
+USER_PROMPT_TEMPLATE = """Analysiere den folgenden Text und finde ALLE personenbezogenen und identifizierenden Daten.
+
+TEXT:
+\"\"\"
+{text}
+\"\"\"
+
+Antworte NUR mit dem JSON-Objekt."""
+
+
+def _parse_ai_response(response_text: str) -> List[Dict[str, str]]:
+    """Parse the JSON response from the AI, handling markdown fences."""
+    text = response_text.strip()
+    # Strip markdown code fences if present
+    fence = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    data = json.loads(text)
+    return data.get("entities", [])
+
+
+# ---------------------------------------------------------------------------
+# Provider implementations
+# ---------------------------------------------------------------------------
+
+def detect_entities_openai(api_key: str, text: str, model: str = "gpt-4o") -> List[Dict[str, str]]:
+    """Use OpenAI / ChatGPT to detect PII entities."""
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": USER_PROMPT_TEMPLATE.format(text=text)},
+        ],
+        temperature=0.0,
+        max_tokens=4096,
+    )
+    return _parse_ai_response(response.choices[0].message.content)
+
+
+def detect_entities_anthropic(api_key: str, text: str, model: str = "claude-sonnet-4-20250514") -> List[Dict[str, str]]:
+    """Use Anthropic / Claude to detect PII entities."""
+    from anthropic import Anthropic
+    client = Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model=model,
+        max_tokens=4096,
+        system=SYSTEM_PROMPT,
+        messages=[
+            {"role": "user", "content": USER_PROMPT_TEMPLATE.format(text=text)},
+        ],
+    )
+    return _parse_ai_response(message.content[0].text)
+
+
+def detect_entities_gemini(api_key: str, text: str, model: str = "gemini-2.0-flash") -> List[Dict[str, str]]:
+    """Use Google Gemini to detect PII entities."""
+    import google.generativeai as genai
+    genai.configure(api_key=api_key)
+    gen_model = genai.GenerativeModel(model)
+    prompt = SYSTEM_PROMPT + "\n\n" + USER_PROMPT_TEMPLATE.format(text=text)
+    response = gen_model.generate_content(prompt)
+    return _parse_ai_response(response.text)
+
+
+# ---------------------------------------------------------------------------
+# Unified interface
+# ---------------------------------------------------------------------------
+
+PROVIDERS = {
+    "openai": detect_entities_openai,
+    "anthropic": detect_entities_anthropic,
+    "gemini": detect_entities_gemini,
+}
+
+
+def detect_entities(provider: str, api_key: str, text: str) -> List[Dict[str, str]]:
+    """
+    Detect PII entities using the chosen AI provider.
+
+    Returns a list of dicts: [{"text": "...", "category": "..."}, ...]
+    """
+    func = PROVIDERS.get(provider)
+    if func is None:
+        raise ValueError(f"Unknown provider: {provider}")
+    return func(api_key, text)
+
+
+def assign_variables(entities: List[Dict[str, str]]) -> Dict[str, Tuple[str, str]]:
+    """
+    Assign anonymisation variables to detected entities.
+
+    Returns a dict mapping original text -> (variable_id, category).
+    Same text always gets the same variable.  Variables look like VBX01, VBX02, …
+    """
+    mapping: Dict[str, Tuple[str, str]] = {}
+    counter = 1
+    for ent in entities:
+        txt = ent["text"]
+        if txt not in mapping:
+            var_id = f"VBX{counter:02d}"
+            mapping[txt] = (var_id, ent["category"])
+            counter += 1
+    return mapping
