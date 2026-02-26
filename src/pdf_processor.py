@@ -13,6 +13,9 @@ Key features:
   3. Ink / freehand annotation detection
   4. PDF form signature field detection
   5. Render-based bottom-zone scan (catch-all for missed elements)
+- Logo / brand image detection: repeating images in headers/footers are
+  identified and redacted according to the selected mode.
+- All PDF metadata is stripped from the output (Author, Creator, Producer, …).
 """
 
 import fitz  # PyMuPDF
@@ -47,6 +50,7 @@ CATEGORY_LABELS = {
     "AUSWEISNUMMER": "Ausweisnummer",
     "GELDBETRAG": "Geldbetrag / Währung",
     "UNTERSCHRIFT": "Unterschrift / Handschrift",
+    "LOGO": "Logo / Markenzeichen",
 }
 
 
@@ -417,6 +421,137 @@ def _redact_bottom_zone_scan(page):
             page.add_redact_annot(expanded, text="", fill=BLACK)
 
 
+# ---------------------------------------------------------------------------
+# Logo / brand image detection
+# ---------------------------------------------------------------------------
+
+# Fraction of page height treated as header/footer zone for logo detection.
+_HEADER_ZONE_FRACTION = 0.15   # top 15 %
+_FOOTER_ZONE_FRACTION = 0.12   # bottom 12 %
+
+
+def _find_repeating_image_xrefs(doc) -> set:
+    """Pre-scan all pages to find image xrefs that appear on 2+ pages.
+
+    Images repeated across pages are very likely logos / letterheads.
+    """
+    xref_page_count: dict = {}
+    for page_idx in range(len(doc)):
+        page = doc[page_idx]
+        try:
+            images = page.get_images(full=True)
+        except Exception:
+            continue
+        seen_on_page: set = set()
+        for img_info in images:
+            xref = img_info[0]
+            if xref not in seen_on_page:
+                seen_on_page.add(xref)
+                xref_page_count[xref] = xref_page_count.get(xref, 0) + 1
+    return {xref for xref, count in xref_page_count.items() if count >= 2}
+
+
+def _redact_logo_images(page, repeating_xrefs: set, mode: str) -> int:
+    """Detect and redact logo / brand images on *page*.
+
+    Targets images that are:
+      • repeated on multiple pages  (letterhead / branding)
+      • located in the header zone  (top ~15 %)
+      • small images in the footer zone  (bottom ~12 %)
+
+    Content images in the body area are preserved.
+    Returns the number of logo redactions added.
+    """
+    page_rect = page.rect
+    header_bottom = page_rect.y0 + page_rect.height * _HEADER_ZONE_FRACTION
+    footer_top = page_rect.y0 + page_rect.height * (1 - _FOOTER_ZONE_FRACTION)
+
+    try:
+        images = page.get_images(full=True)
+    except Exception:
+        return 0
+
+    count = 0
+    for img_info in images:
+        xref = img_info[0]
+        try:
+            rects = page.get_image_rects(xref)
+        except Exception:
+            continue
+
+        for rect in rects:
+            w, h = rect.width, rect.height
+
+            # Skip full-page backgrounds or very large content images
+            if w > page_rect.width * 0.8 and h > page_rect.height * 0.4:
+                continue
+            # Skip tiny invisible elements
+            if w < 5 or h < 5:
+                continue
+
+            is_repeating = xref in repeating_xrefs
+            in_header = rect.y1 <= header_bottom
+            in_footer = rect.y0 >= footer_top
+
+            should_redact = False
+
+            if is_repeating and (in_header or in_footer):
+                # Repeating image in header/footer = almost certainly a logo
+                should_redact = True
+            elif is_repeating and w < page_rect.width * 0.4 and h < page_rect.height * 0.15:
+                # Small repeating image even in body = likely branding
+                should_redact = True
+            elif in_header and w < page_rect.width * 0.5:
+                # Medium-or-smaller image in header = likely logo
+                should_redact = True
+            elif in_footer and w < page_rect.width * 0.4 and h < 80:
+                # Small image in footer = likely footer branding
+                should_redact = True
+
+            if should_redact:
+                expanded = _expand_rect(rect, page_rect, 5)
+                if mode == "pseudo_vars":
+                    font_size = min(h * 0.5, 10)
+                    if font_size < 5:
+                        font_size = 5
+                    page.add_redact_annot(
+                        expanded, text="LOGO", fontname="helv",
+                        fontsize=font_size, align=fitz.TEXT_ALIGN_CENTER,
+                        fill=BLACK, text_color=WHITE,
+                    )
+                else:
+                    # anonymize / pseudo_natural: solid black
+                    page.add_redact_annot(expanded, text="", fill=BLACK)
+                count += 1
+
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Metadata stripping
+# ---------------------------------------------------------------------------
+
+def _strip_metadata(doc):
+    """Remove all identifying metadata from the PDF document."""
+    doc.set_metadata({
+        "producer": "",
+        "format": "",
+        "encryption": "",
+        "author": "",
+        "modDate": "",
+        "keywords": "",
+        "title": "",
+        "creationDate": "",
+        "creator": "",
+        "subject": "",
+        "trapped": "",
+    })
+    try:
+        doc.del_xml_metadata()
+    except Exception:
+        pass
+
+
 # -- Orchestrator -----------------------------------------------------------
 
 def _detect_and_redact_signatures(page):
@@ -446,9 +581,13 @@ def redact_pdf(
     doc = fitz.open(pdf_path)
     total_pages = len(doc)
 
+    # Pre-scan for repeating images (likely logos / letterheads)
+    repeating_xrefs = _find_repeating_image_xrefs(doc)
+
     # Sort entities by length descending so longer matches are processed first
     sorted_entities = sorted(entity_map.keys(), key=len, reverse=True)
 
+    logo_count = 0
     for page_idx, page in enumerate(doc):
         if progress_callback:
             progress_callback(int((page_idx / total_pages) * 100))
@@ -462,6 +601,9 @@ def redact_pdf(
             for inst in text_instances:
                 _add_redaction(page, inst, label, mode)
 
+        # Redact logos / brand images in headers and footers
+        logo_count += _redact_logo_images(page, repeating_xrefs, mode)
+
         # Redact signatures, handwriting, ink annotations, etc.
         _detect_and_redact_signatures(page)
 
@@ -469,7 +611,10 @@ def redact_pdf(
         page.apply_redactions()
 
     # -- Append summary page --
-    _append_summary_page(doc, entity_map, mode)
+    _append_summary_page(doc, entity_map, mode, logo_count=logo_count)
+
+    # -- Strip ALL metadata from output --
+    _strip_metadata(doc)
 
     if progress_callback:
         progress_callback(100)
@@ -483,6 +628,7 @@ def _append_summary_page(
     doc: fitz.Document,
     entity_map: Dict[str, Tuple[str, str]],
     mode: str = "pseudo_vars",
+    logo_count: int = 0,
 ):
     """Append a summary page at the end of *doc*.
 
@@ -620,6 +766,32 @@ def _append_summary_page(
                 fontname="helv", fontsize=8, color=(0.5, 0.5, 0.5),
             )
             y += 20
+
+    # Logo note (if any logos were redacted)
+    if logo_count > 0:
+        y += 15
+        if y > page_h - margin - 30:
+            page = doc.new_page(width=page_w, height=page_h)
+            y = margin
+        logo_text = (
+            f"Zusätzlich: {logo_count} Logo(s) / Markenzeichen in "
+            f"Kopf-/Fußzeilen geschwärzt."
+        )
+        page.insert_text(
+            fitz.Point(margin, y + 10), logo_text,
+            fontname="helv", fontsize=9, color=(0.4, 0.4, 0.4),
+        )
+
+    # Metadata note
+    y_note = y + 25 if logo_count > 0 else y + 15
+    if y_note > page_h - margin - 30:
+        page = doc.new_page(width=page_w, height=page_h)
+        y_note = margin
+    page.insert_text(
+        fitz.Point(margin, y_note + 10),
+        "Alle PDF-Metadaten (Autor, Ersteller, Produzent etc.) wurden entfernt.",
+        fontname="helv", fontsize=8, color=(0.5, 0.5, 0.5),
+    )
 
     # Footer
     y = page_h - margin
