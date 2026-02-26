@@ -129,13 +129,13 @@ def _add_redaction(page, rect: fitz.Rect, label: str, mode: str = "pseudo_vars")
 _SIG_ZONE_FRACTION = 0.40
 
 # Maximum gap (pt) between drawing strokes to consider them one cluster.
-_CLUSTER_GAP = 20
+_CLUSTER_GAP = 12
 
 # Minimum number of vector strokes in a cluster to flag as handwriting.
 _MIN_CLUSTER_STROKES = 3
 
 # Extra padding (pt) around every detected signature element.
-_REDACT_MARGIN = 15
+_REDACT_MARGIN = 4
 
 
 def _expand_rect(rect: fitz.Rect, page_rect: fitz.Rect, margin: float = 15) -> fitz.Rect:
@@ -230,14 +230,14 @@ def _redact_signature_images(page):
             in_sig_zone = rect.y0 >= sig_zone_top
 
             # General signature detection (anywhere on page)
-            if 30 < w < 700 and 8 < h < 300 and 400 < area < 120_000:
+            if 30 < w < 500 and 8 < h < 150 and 500 < area < 60_000:
                 expanded = _expand_rect(rect, page_rect, _REDACT_MARGIN)
                 page.add_redact_annot(expanded, text="", fill=BLACK)
                 continue
 
-            # In signature zone: much wider tolerance
-            if in_sig_zone and w > 15 and h > 5 and area > 150:
-                if w < page_rect.width * 0.9 and h < page_rect.height * 0.3:
+            # In signature zone: wider tolerance, but still constrained
+            if in_sig_zone and w > 25 and h > 8 and area > 400:
+                if w < page_rect.width * 0.6 and h < page_rect.height * 0.15:
                     expanded = _expand_rect(rect, page_rect, _REDACT_MARGIN)
                     page.add_redact_annot(expanded, text="", fill=BLACK)
 
@@ -291,7 +291,7 @@ def _redact_signature_drawings(page):
             continue
 
         # Skip overly large clusters that are probably layout elements
-        if cluster_rect.width > page_rect.width * 0.7 and cluster_rect.height > 200:
+        if cluster_rect.width > page_rect.width * 0.5 and cluster_rect.height > 120:
             continue
 
         expanded = _expand_rect(cluster_rect, page_rect, _REDACT_MARGIN)
@@ -406,8 +406,8 @@ def _redact_bottom_zone_scan(page):
                         dark += 1
                     total += 1
 
-            # Flag cells where > 2 % of pixels are dark (non-text marks)
-            if total > 0 and dark / total > 0.02:
+            # Flag cells where > 5 % of pixels are dark (non-text marks)
+            if total > 0 and dark / total > 0.05:
                 suspect_cells.append(cell_page_rect)
 
     if not suspect_cells:
@@ -416,7 +416,7 @@ def _redact_bottom_zone_scan(page):
     # Merge adjacent suspect cells and redact broad areas
     clusters = _cluster_rects(suspect_cells, max_gap=10)
     for merged_rect, count in clusters:
-        if count >= 2:
+        if count >= 3:
             expanded = _expand_rect(merged_rect, page.rect, _REDACT_MARGIN)
             page.add_redact_annot(expanded, text="", fill=BLACK)
 
@@ -509,7 +509,7 @@ def _redact_logo_images(page, repeating_xrefs: set, mode: str) -> int:
                 should_redact = True
 
             if should_redact:
-                expanded = _expand_rect(rect, page_rect, 5)
+                expanded = _expand_rect(rect, page_rect, 2)
                 if mode == "pseudo_vars":
                     font_size = min(h * 0.5, 10)
                     if font_size < 5:
@@ -796,7 +796,7 @@ def _append_summary_page(
     # Footer
     y = page_h - margin
     page.insert_text(
-        fitz.Point(margin, y), "Erstellt mit PDF Anonymizer",
+        fitz.Point(margin, y), "Erstellt mit TOM's SIMPLE PDF-ANONYMIZER",
         fontname="helv", fontsize=8, color=(0.6, 0.6, 0.6),
     )
 

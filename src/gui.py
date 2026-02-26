@@ -131,10 +131,14 @@ def load_mode() -> str:
 # Colour palette
 # ---------------------------------------------------------------------------
 
-TURQUOISE       = "#00CED1"
-TURQUOISE_MID   = "#00A5A8"
-TURQUOISE_DARK  = "#008B8B"
-TURQUOISE_GLOW  = "#00E5E8"
+BLUE            = "#5BA4CF"
+BLUE_MID        = "#4A93BE"
+BLUE_DARK       = "#3A82AD"
+BLUE_GLOW       = "#6CB5E0"
+
+ORANGE          = "#FF9F43"
+ORANGE_MID      = "#F08C30"
+ORANGE_DARK     = "#E07A20"
 
 BG_DARK         = "#0d1117"
 BG_CARD         = "#161b22"
@@ -142,7 +146,7 @@ BG_SURFACE      = "#21262d"
 BG_HOVER        = "#30363d"
 
 BORDER          = "#30363d"
-BORDER_FOCUS    = "#00CED1"
+BORDER_FOCUS    = "#5BA4CF"
 
 TEXT_PRIMARY    = "#f0f6fc"
 TEXT_SECONDARY  = "#8b949e"
@@ -179,7 +183,7 @@ QLabel#titleLabel {{
     letter-spacing: -0.5px;
 }}
 QLabel#titleAccent {{
-    color: {TURQUOISE};
+    color: {ORANGE};
     font-size: 24px;
     font-weight: 700;
 }}
@@ -202,7 +206,7 @@ QLabel#dropHint {{
     font-size: 11px;
 }}
 QLabel#fileLabel {{
-    color: {TURQUOISE};
+    color: {BLUE};
     font-size: 13px;
     font-weight: 600;
     padding: 4px 0px;
@@ -212,14 +216,14 @@ QLabel#statusLabel {{
     font-size: 12px;
 }}
 QLabel#stepLabel {{
-    color: {TURQUOISE};
+    color: {ORANGE};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#providerPill {{
-    color: {TURQUOISE};
-    background-color: rgba(0, 206, 209, 0.08);
-    border: 1px solid rgba(0, 206, 209, 0.25);
+    color: {BLUE};
+    background-color: rgba(91, 164, 207, 0.08);
+    border: 1px solid rgba(91, 164, 207, 0.25);
     border-radius: 10px;
     padding: 3px 10px;
     font-size: 11px;
@@ -238,7 +242,7 @@ QLabel#errorLabel {{
 
 /* ── Buttons ───────────────────────────────────────────── */
 QPushButton {{
-    background-color: {TURQUOISE_DARK};
+    background-color: {BLUE_DARK};
     color: {TEXT_PRIMARY};
     border: none;
     border-radius: 8px;
@@ -247,10 +251,10 @@ QPushButton {{
     font-weight: 600;
 }}
 QPushButton:hover {{
-    background-color: {TURQUOISE_MID};
+    background-color: {BLUE_MID};
 }}
 QPushButton:pressed {{
-    background-color: {TURQUOISE};
+    background-color: {ORANGE};
     color: {BG_DARK};
 }}
 QPushButton:disabled {{
@@ -273,15 +277,15 @@ QPushButton#settingsBtn:hover {{
 }}
 QPushButton#selectBtn {{
     background-color: transparent;
-    color: {TURQUOISE};
-    border: 1px solid {TURQUOISE_DARK};
+    color: {BLUE};
+    border: 1px solid {BLUE_DARK};
     border-radius: 8px;
     padding: 8px 20px;
     font-size: 13px;
 }}
 QPushButton#selectBtn:hover {{
-    background-color: rgba(0, 206, 209, 0.1);
-    border-color: {TURQUOISE};
+    background-color: rgba(91, 164, 207, 0.1);
+    border-color: {BLUE};
 }}
 QPushButton#selectBtn:disabled {{
     color: {TEXT_MUTED};
@@ -314,7 +318,7 @@ QProgressBar {{
 }}
 QProgressBar::chunk {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 {TURQUOISE_DARK}, stop:1 {TURQUOISE_GLOW});
+        stop:0 {BLUE_DARK}, stop:1 {ORANGE});
     border-radius: 4px;
 }}
 
@@ -328,7 +332,7 @@ QComboBox {{
     font-size: 13px;
 }}
 QComboBox:focus {{
-    border-color: {TURQUOISE_DARK};
+    border-color: {BLUE_DARK};
 }}
 QComboBox QAbstractItemView {{
     background-color: {BG_CARD};
@@ -348,10 +352,10 @@ QLineEdit {{
     border-radius: 6px;
     padding: 8px 12px;
     font-size: 13px;
-    selection-background-color: {TURQUOISE_DARK};
+    selection-background-color: {BLUE_DARK};
 }}
 QLineEdit:focus {{
-    border-color: {TURQUOISE_DARK};
+    border-color: {BLUE_DARK};
 }}
 QLineEdit[valid="true"] {{
     border-color: {SUCCESS};
@@ -388,25 +392,6 @@ QStatusBar {{
     padding: 2px 8px;
 }}
 
-/* ── Mode selector ────────────────────────────────────── */
-QComboBox#modeSelector {{
-    background-color: {BG_SURFACE};
-    color: {TURQUOISE};
-    border: 1px solid rgba(0, 206, 209, 0.25);
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    min-width: 280px;
-}}
-QComboBox#modeSelector:hover {{
-    border-color: {TURQUOISE};
-    background-color: rgba(0, 206, 209, 0.06);
-}}
-QComboBox#modeSelector:focus {{
-    border-color: {TURQUOISE};
-}}
-
 /* ── Drop zone ─────────────────────────────────────────── */
 QFrame#dropZone {{
     background-color: {BG_CARD};
@@ -414,16 +399,16 @@ QFrame#dropZone {{
     border-radius: 16px;
 }}
 QFrame#dropZone:hover {{
-    border-color: {TURQUOISE_DARK};
-    background-color: rgba(0, 206, 209, 0.03);
+    border-color: {BLUE_DARK};
+    background-color: rgba(91, 164, 207, 0.03);
 }}
 QFrame#dropZone[dragOver="true"] {{
-    border-color: {TURQUOISE};
+    border-color: {ORANGE};
     border-style: solid;
-    background-color: rgba(0, 206, 209, 0.06);
+    background-color: rgba(255, 159, 67, 0.06);
 }}
 QFrame#dropZone[processing="true"] {{
-    border-color: {TURQUOISE_DARK};
+    border-color: {BLUE_DARK};
     border-style: solid;
 }}
 QFrame#dropZone[success="true"] {{
@@ -744,9 +729,9 @@ class SettingsDialog(QDialog):
         # -- Model info --
         model_label = QLabel("Modell:  GPT-5.2")
         model_label.setStyleSheet(
-            f"color: {TURQUOISE}; font-size: 13px; font-weight: 600; "
-            f"background-color: rgba(0, 206, 209, 0.08); "
-            f"border: 1px solid rgba(0, 206, 209, 0.25); "
+            f"color: {BLUE}; font-size: 13px; font-weight: 600; "
+            f"background-color: rgba(91, 164, 207, 0.08); "
+            f"border: 1px solid rgba(91, 164, 207, 0.25); "
             f"border-radius: 8px; padding: 8px 14px;"
         )
         layout.addWidget(model_label)
@@ -799,13 +784,120 @@ class SettingsDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# Mode selection dialog  (shown after file selection)
+# ---------------------------------------------------------------------------
+
+_MODE_OPTIONS = [
+    (
+        MODE_ANONYMIZE,
+        "Anonymisieren  (nur Schwärzen)",
+        "Alle erkannten personenbezogenen Daten werden\n"
+        "komplett geschwärzt – keine Variablen, keine Ersetzungen.",
+    ),
+    (
+        MODE_PSEUDO_VARS,
+        "Pseudonymisieren  (Variablen)",
+        "Erkannte Daten werden durch hexadezimale\n"
+        "Variablen ersetzt (A, B, C, D, …).",
+    ),
+    (
+        MODE_PSEUDO_NATURAL,
+        "Pseudonymisieren  (Natürlich)",
+        "KI generiert natürlich klingende Ersatznamen,\n"
+        "Adressen, Nummern etc.",
+    ),
+]
+
+
+class ModeSelectionDialog(QDialog):
+    """Dialog shown after file selection to choose the processing mode."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Verarbeitungsmodus wählen")
+        self.setFixedWidth(480)
+        self.setStyleSheet(STYLESHEET)
+        self.selected_mode: str | None = None
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(28, 24, 28, 20)
+
+        # Header
+        header = QLabel("Wie soll das PDF verarbeitet werden?")
+        header.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 16px; font-weight: 700;"
+        )
+        layout.addWidget(header)
+        layout.addSpacing(6)
+
+        saved = load_mode()
+
+        for mode_key, title, desc in _MODE_OPTIONS:
+            is_saved = mode_key == saved
+            card = QFrame()
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            border_col = ORANGE if is_saved else BORDER
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {BG_SURFACE};
+                    border: {"2" if is_saved else "1"}px solid {border_col};
+                    border-radius: 10px;
+                    padding: 14px 16px;
+                }}
+                QFrame:hover {{
+                    border-color: {ORANGE};
+                    background-color: rgba(255, 159, 67, 0.05);
+                }}
+            """)
+
+            card_layout = QVBoxLayout(card)
+            card_layout.setSpacing(4)
+            card_layout.setContentsMargins(0, 0, 0, 0)
+
+            title_label = QLabel(title)
+            title_label.setStyleSheet(
+                f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600; "
+                f"border: none; background: transparent;"
+            )
+            card_layout.addWidget(title_label)
+
+            desc_label = QLabel(desc)
+            desc_label.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 11px; "
+                f"border: none; background: transparent;"
+            )
+            desc_label.setWordWrap(True)
+            card_layout.addWidget(desc_label)
+
+            card.mousePressEvent = lambda event, m=mode_key: self._select(m)
+            layout.addWidget(card)
+
+        layout.addSpacing(4)
+
+        # Cancel button
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Abbrechen")
+        cancel_btn.setObjectName("selectBtn")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def _select(self, mode: str):
+        self.selected_mode = mode
+        save_mode(mode)
+        self.accept()
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PDF Anonymizer")
+        self.setWindowTitle("TOM's SIMPLE PDF-ANONYMIZER")
         self.setMinimumSize(640, 560)
         self.resize(720, 620)
         self.setStyleSheet(STYLESHEET)
@@ -814,6 +906,7 @@ class MainWindow(QMainWindow):
         self.current_pdf: str | None = None
         self._last_output: str | None = None
         self._entity_count = 0
+        self._selected_mode: str = MODE_PSEUDO_VARS
 
         # Central widget
         central = QWidget()
@@ -829,10 +922,10 @@ class MainWindow(QMainWindow):
 
         title_layout = QHBoxLayout()
         title_layout.setSpacing(0)
-        t1 = QLabel("PDF ")
+        t1 = QLabel("TOM's SIMPLE ")
         t1.setObjectName("titleLabel")
         title_layout.addWidget(t1)
-        t2 = QLabel("Anonymizer")
+        t2 = QLabel("PDF-ANONYMIZER")
         t2.setObjectName("titleAccent")
         title_layout.addWidget(t2)
         title_layout.addStretch()
@@ -862,32 +955,7 @@ class MainWindow(QMainWindow):
         subtitle.setObjectName("subtitleLabel")
         subtitle.setWordWrap(True)
         main_layout.addWidget(subtitle)
-        main_layout.addSpacing(12)
-
-        # ── Mode selector ──
-        mode_row = QHBoxLayout()
-        mode_row.setSpacing(10)
-        mode_label = QLabel("Modus:")
-        mode_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px; font-weight: 600;")
-        mode_row.addWidget(mode_label)
-
-        self.mode_combo = QComboBox()
-        self.mode_combo.setObjectName("modeSelector")
-        self.mode_combo.addItem("Anonymisieren  (nur Schwärzen)", MODE_ANONYMIZE)
-        self.mode_combo.addItem("Pseudonymisieren  (Variablen)", MODE_PSEUDO_VARS)
-        self.mode_combo.addItem("Pseudonymisieren  (Natürlich)", MODE_PSEUDO_NATURAL)
-        # Restore saved mode
-        saved_mode = load_mode()
-        for i in range(self.mode_combo.count()):
-            if self.mode_combo.itemData(i) == saved_mode:
-                self.mode_combo.setCurrentIndex(i)
-                break
-        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        mode_row.addWidget(self.mode_combo)
-        mode_row.addStretch()
-
-        main_layout.addLayout(mode_row)
-        main_layout.addSpacing(12)
+        main_layout.addSpacing(16)
 
         # ── Drop zone ──
         self.drop_zone = DropZone()
@@ -947,17 +1015,12 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Bitte zuerst einen API-Key in den Einstellungen hinterlegen")
 
-    def _on_mode_changed(self):
-        mode = self.mode_combo.currentData()
-        save_mode(mode)
-
     def _current_mode(self) -> str:
-        return self.mode_combo.currentData() or MODE_PSEUDO_VARS
+        return self._selected_mode
 
     def _set_processing(self, active: bool):
         """Lock/unlock UI during processing."""
         self.select_btn.setEnabled(not active)
-        self.mode_combo.setEnabled(not active)
 
     def _open_output_folder(self):
         if self._last_output:
@@ -1016,8 +1079,15 @@ class MainWindow(QMainWindow):
             if not api_key:
                 return
 
+        # Show mode selection dialog
+        mode_dlg = ModeSelectionDialog(self)
+        if not mode_dlg.exec():
+            self.drop_zone.set_state(DropZone.STATE_IDLE)
+            return
+        mode = mode_dlg.selected_mode
+        self._selected_mode = mode
+
         # Ask for output location
-        mode = self._current_mode()
         default_dir = load_output_dir() or os.path.dirname(self.current_pdf)
         base = os.path.splitext(os.path.basename(self.current_pdf))[0]
         suffix = "anonymisiert" if mode == MODE_ANONYMIZE else "pseudonymisiert"
@@ -1158,7 +1228,7 @@ def run_app():
     palette.setColor(QPalette.ColorRole.Text, QColor(TEXT_PRIMARY))
     palette.setColor(QPalette.ColorRole.Button, QColor(BG_SURFACE))
     palette.setColor(QPalette.ColorRole.ButtonText, QColor(TEXT_PRIMARY))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(TURQUOISE))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(BLUE))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(BG_DARK))
     palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(BG_CARD))
     palette.setColor(QPalette.ColorRole.ToolTipText, QColor(TEXT_PRIMARY))
@@ -1167,7 +1237,7 @@ def run_app():
 
     # Default font
     font = app.font()
-    font.setFamily("Segoe UI, SF Pro Display, system-ui, sans-serif")
+    font.setFamily("Arial, Segoe UI, SF Pro Display, system-ui, sans-serif")
     font.setPointSize(10)
     app.setFont(font)
 
