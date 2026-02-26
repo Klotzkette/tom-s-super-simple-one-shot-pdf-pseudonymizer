@@ -1,6 +1,5 @@
 """
-AI Engine – Multi-provider abstraction for PII entity detection.
-Supports OpenAI (ChatGPT), Anthropic (Claude) and Google (Gemini).
+AI Engine – OpenAI GPT-5.2 powered PII entity detection.
 
 Handles large texts by splitting into chunks that fit within AI token limits
 and merging results, ensuring consistent variable assignment across chunks.
@@ -20,39 +19,56 @@ CHUNK_OVERLAP = 2_000
 # Prompt that instructs the AI to find all PII entities
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """Du bist ein Experte für Datenanonymisierung. Deine Aufgabe ist es, in einem gegebenen Text alle personenbezogenen und identifizierenden Daten zu finden.
+SYSTEM_PROMPT = """Du bist ein äußerst gründlicher Experte für Datenanonymisierung. Deine Aufgabe ist es, in einem gegebenen Text ALLE personenbezogenen und identifizierenden Daten LÜCKENLOS zu finden.
+
+OBERSTE REGEL: LIEBER ZU VIEL SCHWÄRZEN ALS ZU WENIG. Im Zweifel IMMER als Entität markieren. Es ist viel schlimmer, einen Namen oder eine persönliche Information zu ÜBERSEHEN, als einmal zu viel zu schwärzen.
 
 Du musst folgende Kategorien erkennen – in ALLEN Sprachen, die im Text vorkommen:
 
-1. VORNAME – Vornamen von Personen
-2. NACHNAME – Nachnamen von Personen
-3. STRASSE – Straßennamen
-4. HAUSNUMMER – Hausnummern
-5. STADT – Städte / Orte
-6. PLZ – Postleitzahlen
-7. LAND – Länder
-8. KONTONUMMER – Kontonummern, IBANs, BICs
+1. VORNAME – Vornamen von Personen. Auch: Spitznamen, Rufnamen, abgekürzte Vornamen (z.B. "Max", "M.", "Hans-Peter", "J.", "Dr. Hans"). JEDER Vorname muss erkannt werden, egal ob er am Satzanfang, in einer Aufzählung, in einer Grußformel, in einer Unterschrift, in einem Briefkopf, in einer E-Mail-Signatur oder irgendwo anders steht. Auch einzelne Buchstaben mit Punkt (z.B. "M."), die als Vornamens-Abkürzung verwendet werden.
+2. NACHNAME – Nachnamen von Personen. Auch: Doppelnamen (z.B. "Müller-Schmidt"), Namenszusätze (z.B. "von", "van", "de", "zu" als Teil des Namens), Titel+Name-Kombinationen. JEDER Nachname muss erkannt werden, auch wenn er nur einmal vorkommt. Nachnamen in Firmennamen (z.B. "Müller" in "Kanzlei Müller") EBENFALLS erkennen.
+3. STRASSE – Straßennamen (z.B. "Hauptstraße", "Bahnhofstr.", "Am Markt", "Rue de la Paix")
+4. HAUSNUMMER – Hausnummern (z.B. "42", "12a", "7-9")
+5. STADT – Städte / Orte (z.B. "Berlin", "Wien", "München", "Graz"). Auch kleinere Orte und Gemeinden.
+6. PLZ – Postleitzahlen (z.B. "10115", "A-1010", "8010")
+7. LAND – Länder (z.B. "Deutschland", "Österreich", "Germany")
+8. KONTONUMMER – Kontonummern, IBANs, BICs, Bankleitzahlen
 9. EMAIL – E-Mail-Adressen
-10. TELEFON – Telefonnummern
+10. TELEFON – Telefonnummern, Faxnummern, Mobilnummern (alle Formate)
 11. KRYPTO_ADRESSE – Bitcoin-Adressen oder andere Kryptowährungs-Adressen
-12. UNTERNEHMEN – Firmennamen (GmbH, AG, Ltd, Inc, SE, OG, KG, etc.)
-13. GRUNDSTUECK – Grundstücksbezeichnungen, Parzellen, Flurnummern, Grundbucheinträge
-14. GEBURTSDATUM – Geburtsdaten von Personen
+12. UNTERNEHMEN – Firmennamen (GmbH, AG, Ltd, Inc, SE, OG, KG, e.U., etc.). Auch Kanzleien, Vereine, Stiftungen, Behörden mit spezifischem Namen.
+13. GRUNDSTUECK – Grundstücksbezeichnungen, Parzellen, Flurnummern, Grundbucheinträge, EZ-Nummern, KG-Nummern
+14. GEBURTSDATUM – Geburtsdaten von Personen (alle Datumsformate)
 15. SOZIALVERSICHERUNG – Sozialversicherungsnummern
-16. STEUERNUMMER – Steuernummern, UID-Nummern
+16. STEUERNUMMER – Steuernummern, UID-Nummern, Finanzamt-Aktenzeichen
 17. AUSWEISNUMMER – Reisepass-, Personalausweis-, Führerscheinnummern
 18. GELDBETRAG – Geldbeträge und Währungsangaben (z.B. $100, 50€, 1.000 USD, 5.000,00 EUR, £200, CHF 500, ¥10000)
 19. UNTERSCHRIFT – Handschriftlich wirkende Texte, Unterschriften, Paraphen, Kürzel, Initialen
+20. AKTENZEICHEN – Geschäftszahlen, Aktenzeichen, Referenznummern, Dossiernummern (z.B. "Az. 5 C 123/24", "GZ 2024/0815")
 
 WICHTIGE REGELN:
+- GRÜNDLICHKEIT: Gehe den Text Satz für Satz, Wort für Wort durch. Überprüfe JEDEN Eigennamen, JEDE Zahl, JEDE Adresse. Übersehe NICHTS.
+- NAMEN SIND PRIORITÄT NR. 1: Jeder Vor- und Nachname MUSS erkannt werden. Prüfe besonders: Briefköpfe, Anreden ("Sehr geehrter Herr ..."), Grußformeln ("Mit freundlichen Grüßen, ..."), Unterschriftszeilen, E-Mail-Header (Von, An, CC), Vertragsparteien, Zeugen, Beteiligte, Bevollmächtigte, Sachbearbeiter, Richter, Anwälte, Notare.
+- KONTEXT NUTZEN: Wenn ein Name an einer Stelle im Text vorkommt, prüfe ob derselbe Name oder Teile davon auch an anderen Stellen auftauchen (z.B. "Herr Müller" und später nur "Müller").
+- IM ZWEIFEL SCHWÄRZEN: Wenn du dir unsicher bist, ob etwas ein Name, eine Adresse oder andere PII ist – markiere es TROTZDEM. Falsch-positive sind akzeptabel, falsch-negative NICHT.
 - Gleiche Entitäten (z.B. derselbe Vorname "Max" an mehreren Stellen) sollen als EINE Entität behandelt werden.
 - Gib NUR die Entitäten zurück, die tatsächlich im Text vorkommen.
 - Gib die Entitäten EXAKT so zurück, wie sie im Text stehen (gleiche Schreibweise, Groß-/Kleinschreibung).
-- Erkenne Entitäten in ALLEN Sprachen (Deutsch, Englisch, Französisch, etc.).
-- Ignoriere allgemeine Begriffe die keine konkreten PII sind (z.B. "Straße" allein ohne Namen).
-- Achte BESONDERS auf Geldbeträge und Währungen: $, €, £, ¥, USD, EUR, GBP, CHF, JPY, BTC und alle anderen Währungen. Auch Beträge wie "1.000,00" oder "100.00" neben einem Währungszeichen erkennen.
-- NICHT anonymisieren: Rechtliche Normen, Paragraphen (§), Gesetzesverweise (z.B. "§ 123 BGB", "Art. 5 DSGVO", "§ 823 Abs. 1 BGB"), Standards und Normen (ISO, DIN, EN, ÖNORM), Rechtsformzusätze in Normverweisen. Diese sind KEINE personenbezogenen Daten.
-- Erkenne handschriftlich wirkende Texte, Unterschriften, Paraphen, Initialen und Kürzel als UNTERSCHRIFT. Auch unleserliche oder kurze Zeichenfolgen, die wie handschriftliche Notizen wirken.
+- Erkenne Entitäten in ALLEN Sprachen (Deutsch, Englisch, Französisch, Türkisch, Arabisch, etc.).
+- Ignoriere allgemeine Begriffe die keine konkreten PII sind (z.B. "Straße" allein ohne Straßenname).
+- Achte BESONDERS auf Geldbeträge und Währungen: $, €, £, ¥, USD, EUR, GBP, CHF, JPY, BTC und alle anderen Währungen.
+- NICHT anonymisieren: Rechtliche Normen, Paragraphen (§), Gesetzesverweise (z.B. "§ 123 BGB", "Art. 5 DSGVO"), Standards und Normen (ISO, DIN, EN, ÖNORM). Diese sind KEINE personenbezogenen Daten.
+- Erkenne handschriftlich wirkende Texte, Unterschriften, Paraphen, Initialen und Kürzel als UNTERSCHRIFT.
+
+CHECKLISTE VOR DER ANTWORT – Hast du wirklich ALLE gefunden?
+- [ ] Alle Vor- und Nachnamen im gesamten Text?
+- [ ] Alle Adressen (Straße, Hausnummer, PLZ, Stadt, Land)?
+- [ ] Alle Telefonnummern, E-Mails, Kontonummern?
+- [ ] Alle Firmennamen?
+- [ ] Alle Geldbeträge?
+- [ ] Alle Aktenzeichen und Referenznummern?
+- [ ] Alle Datumsangaben, die Geburtsdaten sein könnten?
+- [ ] Namen in Grußformeln, Unterschriften, Briefköpfen?
 
 Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im folgenden Format, ohne weitere Erklärung:
 
@@ -68,18 +84,19 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im folgenden Format, ohne weitere
     {"text": "max@example.com", "category": "EMAIL"},
     {"text": "Muster GmbH", "category": "UNTERNEHMEN"},
     {"text": "5.000,00 EUR", "category": "GELDBETRAG"},
+    {"text": "5 C 123/24", "category": "AKTENZEICHEN"},
     {"text": "J.M.", "category": "UNTERSCHRIFT"}
   ]
 }"""
 
-USER_PROMPT_TEMPLATE = """Analysiere den folgenden Text und finde ALLE personenbezogenen und identifizierenden Daten.
+USER_PROMPT_TEMPLATE = """Analysiere den folgenden Text EXTREM GRÜNDLICH und finde ALLE personenbezogenen und identifizierenden Daten. Gehe Satz für Satz vor. Übersehe KEINEN einzigen Namen, keine Adresse, keine Nummer. LIEBER ZU VIEL als ZU WENIG schwärzen.
 
 TEXT:
 \"\"\"
 {text}
 \"\"\"
 
-Antworte NUR mit dem JSON-Objekt."""
+Antworte NUR mit dem JSON-Objekt. Denke daran: Jeden Namen finden, im Zweifel schwärzen."""
 
 
 def _parse_ai_response(response_text: str) -> List[Dict[str, str]]:
@@ -97,45 +114,23 @@ def _parse_ai_response(response_text: str) -> List[Dict[str, str]]:
 # Provider implementations
 # ---------------------------------------------------------------------------
 
-def detect_entities_openai(api_key: str, text: str, model: str = "gpt-4o") -> List[Dict[str, str]]:
-    """Use OpenAI / ChatGPT to detect PII entities."""
+MODEL = "gpt-5.2"
+
+
+def detect_entities_openai(api_key: str, text: str) -> List[Dict[str, str]]:
+    """Use OpenAI GPT-5.2 to detect PII entities."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
-        model=model,
+        model=MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.format(text=text)},
         ],
         temperature=0.0,
-        max_tokens=4096,
+        max_tokens=16384,
     )
     return _parse_ai_response(response.choices[0].message.content)
-
-
-def detect_entities_anthropic(api_key: str, text: str, model: str = "claude-sonnet-4-20250514") -> List[Dict[str, str]]:
-    """Use Anthropic / Claude to detect PII entities."""
-    from anthropic import Anthropic
-    client = Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {"role": "user", "content": USER_PROMPT_TEMPLATE.format(text=text)},
-        ],
-    )
-    return _parse_ai_response(message.content[0].text)
-
-
-def detect_entities_gemini(api_key: str, text: str, model: str = "gemini-2.0-flash") -> List[Dict[str, str]]:
-    """Use Google Gemini to detect PII entities."""
-    import google.generativeai as genai
-    genai.configure(api_key=api_key)
-    gen_model = genai.GenerativeModel(model)
-    prompt = SYSTEM_PROMPT + "\n\n" + USER_PROMPT_TEMPLATE.format(text=text)
-    response = gen_model.generate_content(prompt)
-    return _parse_ai_response(response.text)
 
 
 # ---------------------------------------------------------------------------
@@ -144,8 +139,6 @@ def detect_entities_gemini(api_key: str, text: str, model: str = "gemini-2.0-fla
 
 PROVIDERS = {
     "openai": detect_entities_openai,
-    "anthropic": detect_entities_anthropic,
-    "gemini": detect_entities_gemini,
 }
 
 

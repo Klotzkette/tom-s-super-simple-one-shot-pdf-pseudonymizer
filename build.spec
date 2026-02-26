@@ -16,8 +16,6 @@ a = Analysis(
     datas=[],
     hiddenimports=[
         'openai',
-        'anthropic',
-        'google.generativeai',
         'PyQt6',
         'fitz',
     ],

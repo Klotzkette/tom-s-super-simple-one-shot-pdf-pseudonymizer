@@ -657,15 +657,11 @@ class AnonymizeWorker(QThread):
 # ---------------------------------------------------------------------------
 
 PROVIDER_NAMES = {
-    "openai":    "OpenAI (ChatGPT)",
-    "anthropic": "Anthropic (Claude)",
-    "gemini":    "Google (Gemini)",
+    "openai":    "OpenAI (GPT-5.2)",
 }
-PROVIDER_KEYS = ["openai", "anthropic", "gemini"]
+PROVIDER_KEYS = ["openai"]
 PROVIDER_PLACEHOLDERS = {
     "openai":    "sk-...",
-    "anthropic": "sk-ant-...",
-    "gemini":    "AI...",
 }
 
 
@@ -684,39 +680,36 @@ class SettingsDialog(QDialog):
         header = QLabel("Einstellungen")
         header.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 18px; font-weight: 700;")
         layout.addWidget(header)
-        desc = QLabel("Wählen Sie einen KI-Anbieter und hinterlegen Sie den zugehörigen API-Key.")
+        desc = QLabel("Hinterlegen Sie Ihren OpenAI API-Key. Es wird GPT-5.2 verwendet.")
         desc.setWordWrap(True)
         desc.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
         layout.addWidget(desc)
 
         layout.addSpacing(4)
 
-        # -- Provider --
-        prov_group = QGroupBox("KI-Anbieter")
-        prov_layout = QFormLayout(prov_group)
-        prov_layout.setSpacing(10)
-        self.provider_combo = QComboBox()
-        self.provider_combo.addItems([PROVIDER_NAMES[k] for k in PROVIDER_KEYS])
-        current = load_provider()
-        self.provider_combo.setCurrentIndex(PROVIDER_KEYS.index(current) if current in PROVIDER_KEYS else 0)
-        prov_layout.addRow("Aktiver Anbieter:", self.provider_combo)
-        layout.addWidget(prov_group)
+        # -- Model info --
+        model_label = QLabel("Modell:  GPT-5.2")
+        model_label.setStyleSheet(
+            f"color: {TURQUOISE}; font-size: 13px; font-weight: 600; "
+            f"background-color: rgba(0, 206, 209, 0.08); "
+            f"border: 1px solid rgba(0, 206, 209, 0.25); "
+            f"border-radius: 8px; padding: 8px 14px;"
+        )
+        layout.addWidget(model_label)
 
-        # -- API keys --
-        keys_group = QGroupBox("API-Keys")
+        layout.addSpacing(4)
+
+        # -- API key --
+        keys_group = QGroupBox("OpenAI API-Key")
         keys_layout = QFormLayout(keys_group)
         keys_layout.setSpacing(10)
 
-        self.key_fields: dict[str, QLineEdit] = {}
-        for key in PROVIDER_KEYS:
-            field = QLineEdit(load_api_key(key))
-            field.setPlaceholderText(PROVIDER_PLACEHOLDERS[key])
-            field.setEchoMode(QLineEdit.EchoMode.Password)
-            field.setMinimumHeight(36)
-            # Visual validation hint
-            field.textChanged.connect(self._on_key_changed)
-            self.key_fields[key] = field
-            keys_layout.addRow(f"{PROVIDER_NAMES[key].split(' ')[0]}:", field)
+        self.key_field = QLineEdit(load_api_key("openai"))
+        self.key_field.setPlaceholderText("sk-...")
+        self.key_field.setEchoMode(QLineEdit.EchoMode.Password)
+        self.key_field.setMinimumHeight(36)
+        self.key_field.textChanged.connect(self._on_key_changed)
+        keys_layout.addRow("API-Key:", self.key_field)
 
         layout.addWidget(keys_group)
         layout.addStretch()
@@ -739,18 +732,15 @@ class SettingsDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def _on_key_changed(self):
-        """Give a green border hint when a key field has content."""
-        for key, field in self.key_fields.items():
-            has_value = bool(field.text().strip())
-            field.setProperty("valid", has_value)
-            field.style().unpolish(field)
-            field.style().polish(field)
+        """Give a green border hint when the key field has content."""
+        has_value = bool(self.key_field.text().strip())
+        self.key_field.setProperty("valid", has_value)
+        self.key_field.style().unpolish(self.key_field)
+        self.key_field.style().polish(self.key_field)
 
     def save_and_close(self):
-        for key, field in self.key_fields.items():
-            save_api_key(key, field.text().strip())
-        prov = PROVIDER_KEYS[self.provider_combo.currentIndex()]
-        save_provider(prov)
+        save_api_key("openai", self.key_field.text().strip())
+        save_provider("openai")
         self.accept()
 
 
@@ -857,13 +847,11 @@ class MainWindow(QMainWindow):
     # -- Helpers --
 
     def _update_provider_pill(self):
-        prov = load_provider()
-        short = {"openai": "OpenAI", "anthropic": "Claude", "gemini": "Gemini"}.get(prov, prov)
-        has_key = bool(load_api_key(prov))
+        has_key = bool(load_api_key("openai"))
         if has_key:
-            self.provider_pill.setText(f"{short}")
+            self.provider_pill.setText("GPT-5.2")
         else:
-            self.provider_pill.setText(f"{short}  (kein Key)")
+            self.provider_pill.setText("GPT-5.2  (kein Key)")
             self.provider_pill.setStyleSheet(
                 f"color: {WARNING}; background-color: rgba(210, 153, 34, 0.08); "
                 f"border: 1px solid rgba(210, 153, 34, 0.25); "
@@ -990,8 +978,25 @@ class MainWindow(QMainWindow):
         self.open_folder_btn.setVisible(True)
         self.statusBar().showMessage(f"Gespeichert: {output_path}")
 
+        # Open the PDF in the default viewer
+        self._open_pdf(output_path)
+
         # Reset to idle after 8 seconds so the user can drop the next file
         QTimer.singleShot(8000, self._reset_to_idle)
+
+    def _open_pdf(self, path: str):
+        """Open the PDF in the system's default PDF viewer."""
+        try:
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", path])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", path])
+        except Exception:
+            pass  # silently ignore if no viewer is available
 
     def on_error(self, msg: str):
         self._set_processing(False)
@@ -1027,19 +1032,10 @@ def _check_dependencies() -> str | None:
         import fitz
     except ImportError:
         missing.append("PyMuPDF  (pip install PyMuPDF)")
-    has_any_ai = False
-    for mod in ("openai", "anthropic", "google.generativeai"):
-        try:
-            __import__(mod)
-            has_any_ai = True
-            break
-        except ImportError:
-            pass
-    if not has_any_ai:
-        missing.append(
-            "Mindestens ein KI-Paket: openai, anthropic oder google-generativeai\n"
-            "  → pip install openai anthropic google-generativeai"
-        )
+    try:
+        import openai
+    except ImportError:
+        missing.append("openai  (pip install openai)")
     if _import_error is not None and not missing:
         missing.append(str(_import_error))
     if missing:
