@@ -17,6 +17,24 @@ MODE_ANONYMIZE = "anonymize"            # solid black bars, no labels
 MODE_PSEUDO_VARS = "pseudo_vars"        # black bars with hex variable labels
 MODE_PSEUDO_NATURAL = "pseudo_natural"  # natural-sounding replacement values
 
+# ---------------------------------------------------------------------------
+# Intensity levels  (how aggressively the AI searches for PII)
+# ---------------------------------------------------------------------------
+
+INTENSITY_LIGHT = "light"       # conservative – only clear, unambiguous PII
+INTENSITY_MEDIUM = "medium"     # balanced – standard detection
+INTENSITY_HARD = "hard"         # aggressive – in doubt, always redact
+
+# ---------------------------------------------------------------------------
+# Scope  (which categories of PII to target)
+# ---------------------------------------------------------------------------
+
+SCOPE_NAMES_ONLY = "names_only"  # only VORNAME, NACHNAME, UNTERSCHRIFT
+SCOPE_ALL = "all"                # all 20 categories
+
+# Categories that belong to "names only" scope
+_NAMES_CATEGORIES = {"VORNAME", "NACHNAME", "UNTERSCHRIFT"}
+
 # Approximate character limit per chunk.  Most models handle ~120k chars
 # comfortably; we stay well below to leave room for the system prompt and
 # response.  Overlapping avoids splitting an entity at a boundary.
@@ -107,6 +125,43 @@ TEXT:
 Antworte NUR mit dem JSON-Objekt. Denke daran: Jeden Namen finden, im Zweifel schwärzen."""
 
 # ---------------------------------------------------------------------------
+# Intensity / scope prompt modifiers
+# ---------------------------------------------------------------------------
+
+_INTENSITY_PREFIX = {
+    INTENSITY_LIGHT: (
+        "WICHTIGER HINWEIS ZUR INTENSITÄT: Arbeite KONSERVATIV. "
+        "Schwärze nur Daten, die EINDEUTIG und ZWEIFELSFREI personenbezogen sind. "
+        "Wenn du dir unsicher bist, ÜBERSPRINGE die Entität. "
+        "Weniger ist hier mehr – nur klare Treffer.\n\n"
+    ),
+    INTENSITY_MEDIUM: "",  # default behaviour, no modifier
+    INTENSITY_HARD: (
+        "WICHTIGER HINWEIS ZUR INTENSITÄT: Arbeite MAXIMAL GRÜNDLICH. "
+        "Im Zweifel IMMER schwärzen. Jede noch so kleine Möglichkeit, "
+        "dass es sich um personenbezogene Daten handelt, muss erfasst werden. "
+        "Lieber 10× zu viel als 1× zu wenig. Sei paranoid gründlich!\n\n"
+    ),
+}
+
+_SCOPE_NAMES_INSTRUCTION = (
+    "EINSCHRÄNKUNG DES UMFANGS: Suche AUSSCHLIESSLICH nach NAMEN von Personen. "
+    "Das bedeutet: NUR die Kategorien VORNAME, NACHNAME und UNTERSCHRIFT. "
+    "Ignoriere alle anderen Kategorien (Adressen, Nummern, Firmen, Beträge etc.) vollständig.\n\n"
+)
+
+
+def _build_user_prompt(text: str, intensity: str, scope: str) -> str:
+    """Build the user prompt with intensity/scope modifiers."""
+    prefix = _INTENSITY_PREFIX.get(intensity, "")
+    scope_mod = _SCOPE_NAMES_INSTRUCTION if scope == SCOPE_NAMES_ONLY else ""
+
+    base = USER_PROMPT_TEMPLATE.format(text=text)
+    if prefix or scope_mod:
+        return prefix + scope_mod + base
+    return base
+
+# ---------------------------------------------------------------------------
 # Prompt for natural replacement generation  (MODE_PSEUDO_NATURAL)
 # ---------------------------------------------------------------------------
 
@@ -164,20 +219,32 @@ def _parse_ai_response(response_text: str) -> List[Dict[str, str]]:
 MODEL = "gpt-5.2"
 
 
-def detect_entities_openai(api_key: str, text: str) -> List[Dict[str, str]]:
+def detect_entities_openai(
+    api_key: str,
+    text: str,
+    intensity: str = INTENSITY_HARD,
+    scope: str = SCOPE_ALL,
+) -> List[Dict[str, str]]:
     """Use OpenAI GPT-5.2 to detect PII entities."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
+    user_prompt = _build_user_prompt(text, intensity, scope)
     response = client.chat.completions.create(
         model=MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": USER_PROMPT_TEMPLATE.format(text=text)},
+            {"role": "user", "content": user_prompt},
         ],
         temperature=0.0,
         max_completion_tokens=16384,
     )
-    return _parse_ai_response(response.choices[0].message.content)
+    entities = _parse_ai_response(response.choices[0].message.content)
+
+    # Post-filter for names-only scope (belt and suspenders)
+    if scope == SCOPE_NAMES_ONLY:
+        entities = [e for e in entities if e["category"] in _NAMES_CATEGORIES]
+
+    return entities
 
 
 def generate_natural_replacements_openai(
@@ -261,6 +328,8 @@ def detect_entities(
     api_key: str,
     text: str,
     progress_callback=None,
+    intensity: str = INTENSITY_HARD,
+    scope: str = SCOPE_ALL,
 ) -> List[Dict[str, str]]:
     """
     Detect PII entities using the chosen AI provider.
@@ -280,7 +349,7 @@ def detect_entities(
     for i, chunk in enumerate(chunks):
         if progress_callback:
             progress_callback(int((i / len(chunks)) * 100))
-        chunk_entities = func(api_key, chunk)
+        chunk_entities = func(api_key, chunk, intensity=intensity, scope=scope)
         all_entities.extend(chunk_entities)
 
     if progress_callback:

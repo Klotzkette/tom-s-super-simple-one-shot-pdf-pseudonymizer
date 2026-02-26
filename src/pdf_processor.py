@@ -16,11 +16,15 @@ Key features:
 - Logo / brand image detection: repeating images in headers/footers are
   identified and redacted according to the selected mode.
 - All PDF metadata is stripped from the output (Author, Creator, Producer, …).
+- Multi-format input: accepts PDF, DOCX, DOC, JPG, JPEG.
+- Automatic OCR for image-based inputs and PDFs without text layer.
 """
 
 import fitz  # PyMuPDF
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional, Callable
 import os
+import subprocess
+import tempfile
 
 
 # Black colour for redaction boxes  (R, G, B  0-1 float)
@@ -54,6 +58,200 @@ CATEGORY_LABELS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Supported input formats
+# ---------------------------------------------------------------------------
+
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg"}
+
+
+def _has_text_layer(pdf_path: str) -> bool:
+    """Check if a PDF has an extractable text layer."""
+    doc = fitz.open(pdf_path)
+    for page in doc:
+        text = page.get_text("text")
+        if text.strip():
+            doc.close()
+            return True
+    doc.close()
+    return False
+
+
+def _image_to_pdf(img_path: str) -> str:
+    """Convert a JPG/JPEG image file to a single-page PDF.
+
+    Returns the path to a temporary PDF file.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp.close()
+    img_doc = fitz.open(img_path)
+    pdf_bytes = img_doc.convert_to_pdf()
+    img_doc.close()
+    pdf_doc = fitz.open("pdf", pdf_bytes)
+    pdf_doc.save(tmp.name)
+    pdf_doc.close()
+    return tmp.name
+
+
+def _ocr_pdf(pdf_path: str) -> str:
+    """Run OCR on a PDF without a text layer.
+
+    Tries the ``ocrmypdf`` Python API first, then falls back to the CLI.
+    Returns the path to the OCR'd temporary PDF.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp.close()
+    try:
+        import ocrmypdf
+        ocrmypdf.ocr(
+            pdf_path, tmp.name,
+            language="deu+eng",
+            skip_text=True,
+            optimize=1,
+            progress_bar=False,
+        )
+    except ImportError:
+        # Fallback: command-line ocrmypdf (needs tesseract installed)
+        subprocess.run(
+            [
+                "ocrmypdf", "--skip-text", "-l", "deu+eng",
+                "--optimize", "1", pdf_path, tmp.name,
+            ],
+            check=True,
+            timeout=300,
+        )
+    return tmp.name
+
+
+def _docx_to_pdf(docx_path: str) -> str:
+    """Convert a DOCX/DOC file to PDF.
+
+    Strategy:
+      1. Try LibreOffice headless (best quality, preserves formatting)
+      2. Fallback: extract text via python-docx and create a simple PDF
+    Returns the path to the resulting PDF.
+    """
+    # --- Strategy 1: LibreOffice headless ---
+    tmp_dir = tempfile.mkdtemp()
+    base = os.path.splitext(os.path.basename(docx_path))[0]
+    expected = os.path.join(tmp_dir, f"{base}.pdf")
+    for lo_cmd in ("libreoffice", "soffice"):
+        try:
+            subprocess.run(
+                [
+                    lo_cmd, "--headless", "--convert-to", "pdf",
+                    "--outdir", tmp_dir, docx_path,
+                ],
+                check=True,
+                timeout=120,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if os.path.exists(expected):
+                return expected
+        except (FileNotFoundError, subprocess.SubprocessError):
+            continue
+
+    # --- Strategy 2: python-docx text extraction ---
+    try:
+        from docx import Document as DocxDocument
+    except ImportError:
+        raise RuntimeError(
+            "Für die DOCX-Konvertierung wird LibreOffice oder python-docx benötigt.\n"
+            "Bitte installieren Sie eines davon:\n"
+            "  • LibreOffice (empfohlen für volle Formatierung)\n"
+            "  • pip install python-docx"
+        )
+
+    doc = DocxDocument(docx_path)
+    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+    full_text = "\n\n".join(paragraphs)
+
+    if not full_text.strip():
+        raise ValueError("Das DOCX-Dokument enthält keinen erkennbaren Text.")
+
+    # Build a multi-page PDF from the extracted text
+    pdf_doc = fitz.open()
+    page_w, page_h = 595.28, 841.89
+    margin = 50
+    text_rect = fitz.Rect(margin, margin, page_w - margin, page_h - margin)
+
+    # Split text into pages using fitz textbox overflow
+    remaining = full_text
+    while remaining.strip():
+        page = pdf_doc.new_page(width=page_w, height=page_h)
+        rc = page.insert_textbox(
+            text_rect, remaining,
+            fontname="helv", fontsize=11,
+            color=(0, 0, 0),
+        )
+        if rc >= 0:
+            break  # all text fit on this page
+        # rc < 0 means overflow; estimate how much fit
+        # Approximate: try to find a good split point
+        char_capacity = int(len(remaining) * 0.8)
+        split_pos = remaining.rfind("\n", 0, char_capacity)
+        if split_pos <= 0:
+            split_pos = remaining.rfind(" ", 0, char_capacity)
+        if split_pos <= 0:
+            split_pos = char_capacity
+        remaining = remaining[split_pos:].lstrip()
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp.close()
+    pdf_doc.save(tmp.name)
+    pdf_doc.close()
+    return tmp.name
+
+
+def prepare_input(
+    input_path: str,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> str:
+    """Prepare an input file for processing.
+
+    Accepts PDF, DOCX, DOC, JPG, and JPEG.
+    Converts non-PDF files to PDF and adds OCR when needed.
+
+    Returns the path to a PDF with a text layer.
+    If the returned path differs from *input_path*, it is a temporary file
+    that the caller should clean up when done.
+    """
+    ext = os.path.splitext(input_path)[1].lower()
+
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise ValueError(
+            f"Nicht unterstütztes Dateiformat: {ext}\n"
+            f"Unterstützt: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
+
+    if ext in (".jpg", ".jpeg"):
+        if status_callback:
+            status_callback("Bild wird in PDF konvertiert …")
+        pdf_path = _image_to_pdf(input_path)
+        if status_callback:
+            status_callback("OCR wird durchgeführt …")
+        ocr_path = _ocr_pdf(pdf_path)
+        try:
+            os.unlink(pdf_path)
+        except OSError:
+            pass
+        return ocr_path
+
+    if ext in (".doc", ".docx"):
+        if status_callback:
+            status_callback("Word-Dokument wird in PDF konvertiert …")
+        return _docx_to_pdf(input_path)
+
+    # ext == ".pdf"
+    if _has_text_layer(input_path):
+        return input_path  # already usable
+
+    if status_callback:
+        status_callback("PDF hat keinen Text – OCR wird durchgeführt …")
+    return _ocr_pdf(input_path)
+
+
 def extract_text(pdf_path: str) -> str:
     """Extract the full plain text from a PDF. Requires the PDF to have embedded text."""
     doc = fitz.open(pdf_path)
@@ -76,7 +274,8 @@ def _add_redaction(page, rect: fitz.Rect, label: str, mode: str = "pseudo_vars")
     Rendering depends on *mode*:
       ``"anonymize"``       – solid black box, no text
       ``"pseudo_vars"``     – black box with white hex label
-      ``"pseudo_natural"``  – subtle background with readable replacement text
+      ``"pseudo_natural"``  – black box with white replacement text
+    All pseudonymisation modes use black + white for maximum readability.
     """
     if mode == "anonymize" or not label:
         # Pure anonymization or signatures: solid black, no text
@@ -96,28 +295,16 @@ def _add_redaction(page, rect: fitz.Rect, label: str, mode: str = "pseudo_vars")
         font_size -= 0.5
         text_w = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
 
-    if mode == "pseudo_natural":
-        # Natural pseudonymization: light background with dark text
-        page.add_redact_annot(
-            rect,
-            text=label,
-            fontname="helv",
-            fontsize=font_size,
-            align=fitz.TEXT_ALIGN_CENTER,
-            fill=LIGHT_BG,
-            text_color=DARK_GRAY,
-        )
-    else:
-        # Variable pseudonymization: black box with white label
-        page.add_redact_annot(
-            rect,
-            text=label,
-            fontname="helv",
-            fontsize=font_size,
-            align=fitz.TEXT_ALIGN_CENTER,
-            fill=BLACK,
-            text_color=WHITE,
-        )
+    # Both pseudo modes: black box with white text for readability
+    page.add_redact_annot(
+        rect,
+        text=label,
+        fontname="helv",
+        fontsize=font_size,
+        align=fitz.TEXT_ALIGN_CENTER,
+        fill=BLACK,
+        text_color=WHITE,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -126,16 +313,16 @@ def _add_redaction(page, rect: fitz.Rect, label: str, mode: str = "pseudo_vars")
 
 # Bottom fraction of each page treated as the "signature zone" where
 # detection is more aggressive.
-_SIG_ZONE_FRACTION = 0.40
+_SIG_ZONE_FRACTION = 0.45
 
 # Maximum gap (pt) between drawing strokes to consider them one cluster.
-_CLUSTER_GAP = 12
+_CLUSTER_GAP = 14
 
 # Minimum number of vector strokes in a cluster to flag as handwriting.
 _MIN_CLUSTER_STROKES = 3
 
 # Extra padding (pt) around every detected signature element.
-_REDACT_MARGIN = 4
+_REDACT_MARGIN = 5
 
 
 def _expand_rect(rect: fitz.Rect, page_rect: fitz.Rect, margin: float = 15) -> fitz.Rect:
@@ -207,8 +394,9 @@ def _cluster_rects(rects: List[fitz.Rect], max_gap: float = 20):
 def _redact_signature_images(page):
     """Detect and redact images that look like signatures or handwriting.
 
-    Uses wider size ranges than before and is extra aggressive in the
-    signature zone (bottom of page).
+    Extra aggressive in the signature zone (bottom 45 % of page).
+    Any small-to-medium image in the signature zone is assumed to be
+    a signature, stamp, or handwritten mark.
     """
     page_rect = page.rect
     sig_zone_top = page_rect.height * (1 - _SIG_ZONE_FRACTION)
@@ -230,14 +418,15 @@ def _redact_signature_images(page):
             in_sig_zone = rect.y0 >= sig_zone_top
 
             # General signature detection (anywhere on page)
-            if 30 < w < 500 and 8 < h < 150 and 500 < area < 60_000:
+            if 20 < w < 500 and 6 < h < 180 and 300 < area < 80_000:
                 expanded = _expand_rect(rect, page_rect, _REDACT_MARGIN)
                 page.add_redact_annot(expanded, text="", fill=BLACK)
                 continue
 
-            # In signature zone: wider tolerance, but still constrained
-            if in_sig_zone and w > 25 and h > 8 and area > 400:
-                if w < page_rect.width * 0.6 and h < page_rect.height * 0.15:
+            # In signature zone: very wide tolerance – catch scribbles,
+            # stamps, initials, paraphs, etc.
+            if in_sig_zone and w > 15 and h > 5 and area > 200:
+                if w < page_rect.width * 0.7 and h < page_rect.height * 0.20:
                     expanded = _expand_rect(rect, page_rect, _REDACT_MARGIN)
                     page.add_redact_annot(expanded, text="", fill=BLACK)
 
@@ -285,7 +474,8 @@ def _redact_signature_drawings(page):
 
     for cluster_rect, stroke_count in clusters:
         in_sig_zone = cluster_rect.y0 >= sig_zone_top
-        min_strokes = 2 if in_sig_zone else _MIN_CLUSTER_STROKES
+        # In the signature zone: even a single multi-point stroke can be a signature
+        min_strokes = 1 if in_sig_zone else _MIN_CLUSTER_STROKES
 
         if stroke_count < min_strokes:
             continue
@@ -406,27 +596,27 @@ def _redact_bottom_zone_scan(page):
                         dark += 1
                     total += 1
 
-            # Flag cells where > 5 % of pixels are dark (non-text marks)
-            if total > 0 and dark / total > 0.05:
+            # Flag cells where > 3 % of pixels are dark (non-text marks)
+            if total > 0 and dark / total > 0.03:
                 suspect_cells.append(cell_page_rect)
 
     if not suspect_cells:
         return
 
     # Merge adjacent suspect cells and redact broad areas
-    clusters = _cluster_rects(suspect_cells, max_gap=10)
+    clusters = _cluster_rects(suspect_cells, max_gap=12)
     for merged_rect, count in clusters:
-        if count >= 3:
+        if count >= 2:
             expanded = _expand_rect(merged_rect, page.rect, _REDACT_MARGIN)
             page.add_redact_annot(expanded, text="", fill=BLACK)
 
 
 # ---------------------------------------------------------------------------
-# Logo / brand image detection
+# Logo / brand image / letterhead detection
 # ---------------------------------------------------------------------------
 
 # Fraction of page height treated as header/footer zone for logo detection.
-_HEADER_ZONE_FRACTION = 0.15   # top 15 %
+_HEADER_ZONE_FRACTION = 0.20   # top 20 % (letterheads can be tall)
 _FOOTER_ZONE_FRACTION = 0.12   # bottom 12 %
 
 
@@ -452,14 +642,14 @@ def _find_repeating_image_xrefs(doc) -> set:
 
 
 def _redact_logo_images(page, repeating_xrefs: set, mode: str) -> int:
-    """Detect and redact logo / brand images on *page*.
+    """Detect and redact logo / brand images and letterheads on *page*.
 
-    Targets images that are:
-      • repeated on multiple pages  (letterhead / branding)
-      • located in the header zone  (top ~15 %)
-      • small images in the footer zone  (bottom ~12 %)
+    Aggressively targets:
+      • ANY image in the header zone  (top 20 %) – letterheads, logos, brand graphics
+      • Repeating images anywhere – branding that appears on multiple pages
+      • Small images in the footer zone  (bottom 12 %)
 
-    Content images in the body area are preserved.
+    Only preserves large content images in the body area.
     Returns the number of logo redactions added.
     """
     page_rect = page.rect
@@ -482,11 +672,11 @@ def _redact_logo_images(page, repeating_xrefs: set, mode: str) -> int:
         for rect in rects:
             w, h = rect.width, rect.height
 
-            # Skip full-page backgrounds or very large content images
-            if w > page_rect.width * 0.8 and h > page_rect.height * 0.4:
+            # Skip full-page backgrounds
+            if w > page_rect.width * 0.9 and h > page_rect.height * 0.5:
                 continue
             # Skip tiny invisible elements
-            if w < 5 or h < 5:
+            if w < 3 or h < 3:
                 continue
 
             is_repeating = xref in repeating_xrefs
@@ -495,22 +685,22 @@ def _redact_logo_images(page, repeating_xrefs: set, mode: str) -> int:
 
             should_redact = False
 
-            if is_repeating and (in_header or in_footer):
-                # Repeating image in header/footer = almost certainly a logo
+            if in_header:
+                # ANY image in the header zone = always redact (letterhead / logo)
                 should_redact = True
-            elif is_repeating and w < page_rect.width * 0.4 and h < page_rect.height * 0.15:
-                # Small repeating image even in body = likely branding
+            elif is_repeating:
+                # Repeating image anywhere = branding
                 should_redact = True
-            elif in_header and w < page_rect.width * 0.5:
-                # Medium-or-smaller image in header = likely logo
-                should_redact = True
-            elif in_footer and w < page_rect.width * 0.4 and h < 80:
-                # Small image in footer = likely footer branding
+            elif in_footer and h < 100:
+                # Images in footer zone = likely footer branding
                 should_redact = True
 
             if should_redact:
                 expanded = _expand_rect(rect, page_rect, 2)
-                if mode == "pseudo_vars":
+                if mode == "anonymize":
+                    page.add_redact_annot(expanded, text="", fill=BLACK)
+                else:
+                    # Both pseudo modes: show "LOGO" label
                     font_size = min(h * 0.5, 10)
                     if font_size < 5:
                         font_size = 5
@@ -519,12 +709,51 @@ def _redact_logo_images(page, repeating_xrefs: set, mode: str) -> int:
                         fontsize=font_size, align=fitz.TEXT_ALIGN_CENTER,
                         fill=BLACK, text_color=WHITE,
                     )
-                else:
-                    # anonymize / pseudo_natural: solid black
-                    page.add_redact_annot(expanded, text="", fill=BLACK)
                 count += 1
 
     return count
+
+
+def _redact_header_zone_drawings(page):
+    """Redact vector drawings in the header zone (letterhead graphics, lines, etc.).
+
+    Catches non-image letterhead elements like decorative lines, shapes,
+    and vector logos that are not embedded as raster images.
+    """
+    page_rect = page.rect
+    header_bottom = page_rect.y0 + page_rect.height * _HEADER_ZONE_FRACTION
+
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return
+
+    if not drawings:
+        return
+
+    header_strokes: List[fitz.Rect] = []
+    for d in drawings:
+        rect = fitz.Rect(d["rect"])
+        # Only consider drawings in the header zone
+        if rect.y1 > header_bottom:
+            continue
+        # Skip invisible specks
+        if rect.width < 2 and rect.height < 2:
+            continue
+        # Skip page-wide single hairlines (likely just a separator)
+        if rect.width > page_rect.width * 0.7 and rect.height < 2:
+            continue
+        header_strokes.append(rect)
+
+    if not header_strokes:
+        return
+
+    # Cluster nearby drawings and redact clusters with multiple strokes
+    clusters = _cluster_rects(header_strokes, max_gap=8)
+    for cluster_rect, stroke_count in clusters:
+        if stroke_count >= 2:
+            expanded = _expand_rect(cluster_rect, page_rect, 2)
+            page.add_redact_annot(expanded, text="", fill=BLACK)
 
 
 # ---------------------------------------------------------------------------
@@ -555,7 +784,12 @@ def _strip_metadata(doc):
 # -- Orchestrator -----------------------------------------------------------
 
 def _detect_and_redact_signatures(page):
-    """Run all signature / handwriting detection methods on *page*."""
+    """Run all signature / handwriting detection methods on *page*.
+
+    Combines five detection strategies for maximum coverage:
+    image analysis, vector clustering, ink annotations, form fields,
+    and a render-based bottom-zone scan as catch-all.
+    """
     _redact_signature_images(page)
     _redact_signature_drawings(page)
     _redact_ink_annotations(page)
@@ -601,8 +835,11 @@ def redact_pdf(
             for inst in text_instances:
                 _add_redaction(page, inst, label, mode)
 
-        # Redact logos / brand images in headers and footers
+        # Redact logos / brand images / letterheads in headers and footers
         logo_count += _redact_logo_images(page, repeating_xrefs, mode)
+
+        # Redact vector drawings in header zone (letterhead graphics)
+        _redact_header_zone_drawings(page)
 
         # Redact signatures, handwriting, ink annotations, etc.
         _detect_and_redact_signatures(page)
@@ -727,31 +964,18 @@ def _append_summary_page(
 
             cat_label = CATEGORY_LABELS.get(category, category)
 
-            if mode == "pseudo_natural":
-                # Natural mode: show replacement text in a subtle chip
-                disp = label if len(label) <= 35 else label[:32] + "..."
-                chip_w = fitz.get_text_length(disp, fontname="helv", fontsize=9) + 8
-                chip_rect = fitz.Rect(col_var, y, col_var + chip_w, y + 14)
-                shape = page.new_shape()
-                shape.draw_rect(chip_rect)
-                shape.finish(color=(0.8, 0.8, 0.78), fill=LIGHT_BG, width=0.3)
-                shape.commit()
-                page.insert_text(
-                    fitz.Point(col_var + 4, y + 10), disp,
-                    fontname="helv", fontsize=9, color=DARK_GRAY,
-                )
-            else:
-                # Variable mode: black chip with white text
-                chip_w = fitz.get_text_length(label, fontname="helv", fontsize=9) + 8
-                chip_rect = fitz.Rect(col_var, y, col_var + chip_w, y + 14)
-                shape = page.new_shape()
-                shape.draw_rect(chip_rect)
-                shape.finish(color=DARK_GRAY, fill=BLACK, width=0.3)
-                shape.commit()
-                page.insert_text(
-                    fitz.Point(col_var + 4, y + 10), label,
-                    fontname="helv", fontsize=9, color=WHITE,
-                )
+            # Black chip with white text (consistent for all pseudo modes)
+            disp = label if len(label) <= 35 else label[:32] + "..."
+            chip_w = fitz.get_text_length(disp, fontname="helv", fontsize=9) + 8
+            chip_rect = fitz.Rect(col_var, y, col_var + chip_w, y + 14)
+            shape = page.new_shape()
+            shape.draw_rect(chip_rect)
+            shape.finish(color=DARK_GRAY, fill=BLACK, width=0.3)
+            shape.commit()
+            page.insert_text(
+                fitz.Point(col_var + 4, y + 10), disp,
+                fontname="helv", fontsize=9, color=WHITE,
+            )
 
             # Category
             page.insert_text(

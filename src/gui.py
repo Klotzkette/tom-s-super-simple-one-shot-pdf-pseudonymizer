@@ -64,13 +64,24 @@ try:
     from ai_engine import (
         detect_entities, assign_variables, generate_natural_replacements,
         MODE_ANONYMIZE, MODE_PSEUDO_VARS, MODE_PSEUDO_NATURAL,
+        INTENSITY_LIGHT, INTENSITY_MEDIUM, INTENSITY_HARD,
+        SCOPE_NAMES_ONLY, SCOPE_ALL,
     )
-    from pdf_processor import extract_text, redact_pdf, get_page_count
+    from pdf_processor import (
+        extract_text, redact_pdf, get_page_count,
+        prepare_input, SUPPORTED_EXTENSIONS,
+    )
 except ImportError as _imp_err:
     _import_error = _imp_err
     MODE_ANONYMIZE = "anonymize"
     MODE_PSEUDO_VARS = "pseudo_vars"
     MODE_PSEUDO_NATURAL = "pseudo_natural"
+    INTENSITY_LIGHT = "light"
+    INTENSITY_MEDIUM = "medium"
+    INTENSITY_HARD = "hard"
+    SCOPE_NAMES_ONLY = "names_only"
+    SCOPE_ALL = "all"
+    SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg"}
 else:
     _import_error = None
 
@@ -125,6 +136,26 @@ def save_mode(mode: str):
 def load_mode() -> str:
     s = _settings()
     return s.value("processing_mode", MODE_PSEUDO_VARS)
+
+
+def save_intensity(intensity: str):
+    s = _settings()
+    s.setValue("intensity", intensity)
+
+
+def load_intensity() -> str:
+    s = _settings()
+    return s.value("intensity", INTENSITY_MEDIUM)
+
+
+def save_scope(scope: str):
+    s = _settings()
+    s.setValue("scope", scope)
+
+
+def load_scope() -> str:
+    s = _settings()
+    return s.value("scope", SCOPE_ALL)
 
 
 # ---------------------------------------------------------------------------
@@ -439,8 +470,11 @@ QScrollBar::handle:vertical {{
 # Animated drop zone with visual states
 # ---------------------------------------------------------------------------
 
+_ACCEPTED_EXTENSIONS = tuple(SUPPORTED_EXTENSIONS)  # (".pdf", ".docx", ...)
+
+
 class DropZone(QFrame):
-    """Drop zone that accepts PDF files and shows processing states."""
+    """Drop zone that accepts PDF, DOCX, DOC, JPG, JPEG files."""
     file_dropped = pyqtSignal(str)
     clicked = pyqtSignal()
 
@@ -505,8 +539,8 @@ class DropZone(QFrame):
 
         if state == self.STATE_IDLE:
             self.icon_label.setText("\U0001F4C4")  # document emoji
-            self.primary_label.setText("PDF hier ablegen")
-            self.secondary_label.setText("oder klicken, um eine Datei auszuwählen")
+            self.primary_label.setText("Datei hier ablegen")
+            self.secondary_label.setText("PDF, Word, JPG – oder klicken zum Auswählen")
             self.secondary_label.setVisible(True)
             self.step_label.setVisible(False)
             self.progress_bar.setVisible(False)
@@ -575,7 +609,7 @@ class DropZone(QFrame):
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
-                if url.toLocalFile().lower().endswith(".pdf"):
+                if url.toLocalFile().lower().endswith(_ACCEPTED_EXTENSIONS):
                     event.acceptProposedAction()
                     self.setProperty("dragOver", True)
                     self.style().unpolish(self)
@@ -594,7 +628,7 @@ class DropZone(QFrame):
         self.style().polish(self)
         for url in event.mimeData().urls():
             path = url.toLocalFile()
-            if path.lower().endswith(".pdf"):
+            if path.lower().endswith(_ACCEPTED_EXTENSIONS):
                 self.file_dropped.emit(path)
                 return
 
@@ -606,38 +640,64 @@ class DropZone(QFrame):
 class AnonymizeWorker(QThread):
     progress = pyqtSignal(int)           # 0-100
     status = pyqtSignal(str)             # status text
-    step = pyqtSignal(str)               # step indicator  (1/4, 2/4 …)
+    step = pyqtSignal(str)               # step indicator  (1/5, 2/5 …)
     entity_count = pyqtSignal(int)       # number of entities found
     finished_ok = pyqtSignal(str)        # output path
     finished_err = pyqtSignal(str)       # error message
 
-    def __init__(self, pdf_path: str, output_path: str, provider: str, api_key: str, mode: str = MODE_PSEUDO_VARS):
+    def __init__(
+        self,
+        input_path: str,
+        output_path: str,
+        provider: str,
+        api_key: str,
+        mode: str = MODE_PSEUDO_VARS,
+        intensity: str = INTENSITY_MEDIUM,
+        scope: str = SCOPE_ALL,
+    ):
         super().__init__()
-        self.pdf_path = pdf_path
+        self.input_path = input_path
         self.output_path = output_path
         self.provider = provider
         self.api_key = api_key
         self.mode = mode
+        self.intensity = intensity
+        self.scope = scope
+        self._temp_pdf: str | None = None
 
     def run(self):
         try:
-            # Step 1 – extract text
-            self.step.emit("Schritt 1/4  –  Text extrahieren")
-            self.status.emit("Text wird aus dem PDF extrahiert …")
-            self.progress.emit(5)
-            text = extract_text(self.pdf_path)
+            # Step 1 – prepare input (convert / OCR if needed)
+            self.step.emit("Schritt 1/5  –  Datei vorbereiten")
+            self.status.emit("Eingabedatei wird vorbereitet …")
+            self.progress.emit(2)
 
-            # Step 2 – AI entity detection
-            self.step.emit("Schritt 2/4  –  KI-Analyse")
+            pdf_path = prepare_input(
+                self.input_path,
+                status_callback=lambda msg: self.status.emit(msg),
+            )
+            if pdf_path != self.input_path:
+                self._temp_pdf = pdf_path  # remember for cleanup
+
+            # Step 2 – extract text
+            self.step.emit("Schritt 2/5  –  Text extrahieren")
+            self.status.emit("Text wird aus dem PDF extrahiert …")
+            self.progress.emit(8)
+            text = extract_text(pdf_path)
+
+            # Step 3 – AI entity detection
+            self.step.emit("Schritt 3/5  –  KI-Analyse")
             self.status.emit("KI analysiert den Text …")
-            self.progress.emit(10)
+            self.progress.emit(12)
 
             def _ai_progress(pct):
-                self.progress.emit(10 + int(pct * 0.30))
+                self.progress.emit(12 + int(pct * 0.28))
 
             entities = detect_entities(
                 self.provider, self.api_key, text,
                 progress_callback=_ai_progress,
+                intensity=self.intensity,
+                scope=self.scope,
             )
 
             if not entities:
@@ -645,50 +705,62 @@ class AnonymizeWorker(QThread):
                 self.status.emit("Keine personenbezogenen Daten gefunden.")
                 self.progress.emit(100)
                 import shutil
-                shutil.copy2(self.pdf_path, self.output_path)
+                shutil.copy2(pdf_path, self.output_path)
+                self._cleanup_temp()
                 self.finished_ok.emit(self.output_path)
                 return
 
             self.entity_count.emit(len(entities))
 
-            # Step 3 – assign labels (variables / natural replacements)
+            # Step 4 – assign labels (variables / natural replacements)
             replacements = None
             if self.mode == MODE_PSEUDO_NATURAL:
-                self.step.emit("Schritt 3/4  –  Natürliche Ersetzungen generieren")
+                self.step.emit("Schritt 4/5  –  Natürliche Ersetzungen generieren")
                 self.status.emit(f"{len(entities)} Entitäten erkannt – generiere Ersetzungen …")
                 self.progress.emit(42)
                 replacements = generate_natural_replacements(
                     self.provider, self.api_key, entities,
                 )
             else:
-                self.step.emit("Schritt 3/4  –  Variablen zuweisen")
+                self.step.emit("Schritt 4/5  –  Variablen zuweisen")
                 self.status.emit(f"{len(entities)} Entitäten erkannt …")
                 self.progress.emit(42)
 
             entity_map = assign_variables(entities, mode=self.mode, replacements=replacements)
 
-            # Step 4 – redact PDF
+            # Step 5 – redact PDF
             mode_label = {
                 MODE_ANONYMIZE: "anonymisieren",
                 MODE_PSEUDO_VARS: "pseudonymisieren",
                 MODE_PSEUDO_NATURAL: "pseudonymisieren",
             }.get(self.mode, "verarbeiten")
-            self.step.emit(f"Schritt 4/4  –  PDF {mode_label}")
+            self.step.emit(f"Schritt 5/5  –  PDF {mode_label}")
             self.status.emit("PDF wird geschrieben …")
 
             def _pdf_progress(pct):
                 self.progress.emit(45 + int(pct * 0.50))
 
             redact_pdf(
-                self.pdf_path, self.output_path, entity_map,
+                pdf_path, self.output_path, entity_map,
                 mode=self.mode, progress_callback=_pdf_progress,
             )
 
+            self._cleanup_temp()
             self.progress.emit(100)
             self.finished_ok.emit(self.output_path)
 
         except Exception as e:
+            self._cleanup_temp()
             self.finished_err.emit(f"{e}\n\n{traceback.format_exc()}")
+
+    def _cleanup_temp(self):
+        """Remove temporary PDF created during conversion/OCR."""
+        if self._temp_pdf:
+            try:
+                os.unlink(self._temp_pdf)
+            except OSError:
+                pass
+            self._temp_pdf = None
 
 
 # ---------------------------------------------------------------------------
@@ -808,33 +880,147 @@ _MODE_OPTIONS = [
     ),
 ]
 
+_INTENSITY_OPTIONS = [
+    (INTENSITY_LIGHT, "Leicht", "Nur eindeutige PII"),
+    (INTENSITY_MEDIUM, "Mittel", "Standard-Erkennung"),
+    (INTENSITY_HARD, "Gründlich", "Maximal, im Zweifel schwärzen"),
+]
+
+_SCOPE_OPTIONS = [
+    (SCOPE_NAMES_ONLY, "Nur Namen", "Vor- und Nachnamen"),
+    (SCOPE_ALL, "Alles Relevante", "Alle Kategorien"),
+]
+
+
+class _ChipGroup(QFrame):
+    """A row of clickable chip buttons for option selection."""
+
+    selection_changed = pyqtSignal(str)
+
+    def __init__(self, options: list, saved_value: str, parent=None):
+        super().__init__(parent)
+        self._selected = saved_value
+        self._chips: dict = {}
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        for key, label, tooltip in options:
+            chip = QPushButton(label)
+            chip.setToolTip(tooltip)
+            chip.setCursor(Qt.CursorShape.PointingHandCursor)
+            chip.setFixedHeight(32)
+            chip.clicked.connect(lambda checked, k=key: self._on_click(k))
+            self._chips[key] = chip
+            layout.addWidget(chip)
+
+        layout.addStretch()
+        self._update_styles()
+
+    def _on_click(self, key: str):
+        self._selected = key
+        self._update_styles()
+        self.selection_changed.emit(key)
+
+    def _update_styles(self):
+        for key, chip in self._chips.items():
+            if key == self._selected:
+                chip.setStyleSheet(
+                    f"QPushButton {{ background-color: {ORANGE}; color: {BG_DARK}; "
+                    f"border: none; border-radius: 6px; padding: 4px 14px; "
+                    f"font-size: 12px; font-weight: 600; }}"
+                )
+            else:
+                chip.setStyleSheet(
+                    f"QPushButton {{ background-color: {BG_SURFACE}; color: {TEXT_SECONDARY}; "
+                    f"border: 1px solid {BORDER}; border-radius: 6px; padding: 4px 14px; "
+                    f"font-size: 12px; font-weight: 500; }}"
+                    f"QPushButton:hover {{ border-color: {ORANGE}; color: {TEXT_PRIMARY}; }}"
+                )
+
+    @property
+    def selected(self) -> str:
+        return self._selected
+
 
 class ModeSelectionDialog(QDialog):
-    """Dialog shown after file selection to choose the processing mode."""
+    """Dialog shown after file selection to choose mode, intensity, and scope."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Verarbeitungsmodus wählen")
-        self.setFixedWidth(480)
+        self.setWindowTitle("Verarbeitungsoptionen")
+        self.setFixedWidth(500)
         self.setStyleSheet(STYLESHEET)
         self.selected_mode: str | None = None
+        self.selected_intensity: str = load_intensity()
+        self.selected_scope: str = load_scope()
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+        layout.setSpacing(10)
         layout.setContentsMargins(28, 24, 28, 20)
 
         # Header
-        header = QLabel("Wie soll das PDF verarbeitet werden?")
+        header = QLabel("Verarbeitungsoptionen")
         header.setStyleSheet(
             f"color: {TEXT_PRIMARY}; font-size: 16px; font-weight: 700;"
         )
         layout.addWidget(header)
-        layout.addSpacing(6)
+        layout.addSpacing(2)
 
-        saved = load_mode()
+        # -- Intensity section --
+        int_label = QLabel("Intensität")
+        int_label.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: 600; "
+            f"text-transform: uppercase; letter-spacing: 1px;"
+        )
+        layout.addWidget(int_label)
+
+        self._intensity_chips = _ChipGroup(
+            _INTENSITY_OPTIONS, self.selected_intensity
+        )
+        self._intensity_chips.selection_changed.connect(self._on_intensity)
+        layout.addWidget(self._intensity_chips)
+
+        layout.addSpacing(4)
+
+        # -- Scope section --
+        scope_label = QLabel("Umfang")
+        scope_label.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: 600; "
+            f"text-transform: uppercase; letter-spacing: 1px;"
+        )
+        layout.addWidget(scope_label)
+
+        self._scope_chips = _ChipGroup(
+            _SCOPE_OPTIONS, self.selected_scope
+        )
+        self._scope_chips.selection_changed.connect(self._on_scope)
+        layout.addWidget(self._scope_chips)
+
+        layout.addSpacing(8)
+
+        # -- Divider --
+        divider = QFrame()
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(f"background-color: {BORDER};")
+        layout.addWidget(divider)
+
+        layout.addSpacing(4)
+
+        # -- Mode section --
+        mode_label = QLabel("Modus  (zum Starten anklicken)")
+        mode_label.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: 600; "
+            f"text-transform: uppercase; letter-spacing: 1px;"
+        )
+        layout.addWidget(mode_label)
+        layout.addSpacing(2)
+
+        saved_mode = load_mode()
 
         for mode_key, title, desc in _MODE_OPTIONS:
-            is_saved = mode_key == saved
+            is_saved = mode_key == saved_mode
             card = QFrame()
             card.setCursor(Qt.CursorShape.PointingHandCursor)
             border_col = ORANGE if is_saved else BORDER
@@ -843,7 +1029,7 @@ class ModeSelectionDialog(QDialog):
                     background-color: {BG_SURFACE};
                     border: {"2" if is_saved else "1"}px solid {border_col};
                     border-radius: 10px;
-                    padding: 14px 16px;
+                    padding: 12px 14px;
                 }}
                 QFrame:hover {{
                     border-color: {ORANGE};
@@ -852,7 +1038,7 @@ class ModeSelectionDialog(QDialog):
             """)
 
             card_layout = QVBoxLayout(card)
-            card_layout.setSpacing(4)
+            card_layout.setSpacing(3)
             card_layout.setContentsMargins(0, 0, 0, 0)
 
             title_label = QLabel(title)
@@ -883,6 +1069,14 @@ class ModeSelectionDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
+
+    def _on_intensity(self, value: str):
+        self.selected_intensity = value
+        save_intensity(value)
+
+    def _on_scope(self, value: str):
+        self.selected_scope = value
+        save_scope(value)
 
     def _select(self, mode: str):
         self.selected_mode = mode
@@ -949,8 +1143,8 @@ class MainWindow(QMainWindow):
 
         # Subtitle
         subtitle = QLabel(
-            "Automatische KI-gestützte Anonymisierung personenbezogener Daten in PDFs.  "
-            "Voraussetzung: Das PDF muss Texterkennung (OCR) enthalten."
+            "Automatische KI-gestützte Anonymisierung personenbezogener Daten.  "
+            "Unterstützt: PDF, Word (DOCX), JPG – OCR wird bei Bedarf automatisch durchgeführt."
         )
         subtitle.setObjectName("subtitleLabel")
         subtitle.setWordWrap(True)
@@ -979,7 +1173,7 @@ class MainWindow(QMainWindow):
         self.open_folder_btn.clicked.connect(self._open_output_folder)
         bottom.addWidget(self.open_folder_btn)
 
-        self.select_btn = QPushButton("PDF auswählen")
+        self.select_btn = QPushButton("Datei auswählen")
         self.select_btn.setObjectName("selectBtn")
         self.select_btn.clicked.connect(self.browse_pdf)
         bottom.addWidget(self.select_btn)
@@ -1043,8 +1237,14 @@ class MainWindow(QMainWindow):
     def browse_pdf(self):
         if self.worker and self.worker.isRunning():
             return
+        file_filter = (
+            "Alle unterstützten Dateien (*.pdf *.docx *.doc *.jpg *.jpeg);;"
+            "PDF-Dateien (*.pdf);;"
+            "Word-Dokumente (*.docx *.doc);;"
+            "Bilder (*.jpg *.jpeg)"
+        )
         path, _ = QFileDialog.getOpenFileName(
-            self, "PDF-Datei auswählen", "", "PDF-Dateien (*.pdf)"
+            self, "Datei auswählen", "", file_filter,
         )
         if path:
             self.on_file_selected(path)
@@ -1059,6 +1259,14 @@ class MainWindow(QMainWindow):
         self.file_label.setText(name)
         self.statusBar().showMessage(f"Geladen: {name}")
         self.start_anonymization()
+
+    @staticmethod
+    def _anonymized_filename(mode: str) -> str:
+        """Generate an anonymized output filename with date prefix."""
+        from datetime import date
+        today = date.today().strftime("%Y%m%d")
+        suffix = "Anonymisiert" if mode == MODE_ANONYMIZE else "Pseudonymisiert"
+        return f"{today}_Dokument_{suffix}.pdf"
 
     def start_anonymization(self):
         if not self.current_pdf:
@@ -1085,13 +1293,13 @@ class MainWindow(QMainWindow):
             self.drop_zone.set_state(DropZone.STATE_IDLE)
             return
         mode = mode_dlg.selected_mode
+        intensity = mode_dlg.selected_intensity
+        scope = mode_dlg.selected_scope
         self._selected_mode = mode
 
-        # Ask for output location
+        # Ask for output location (anonymized filename)
         default_dir = load_output_dir() or os.path.dirname(self.current_pdf)
-        base = os.path.splitext(os.path.basename(self.current_pdf))[0]
-        suffix = "anonymisiert" if mode == MODE_ANONYMIZE else "pseudonymisiert"
-        default_name = f"{base}_{suffix}.pdf"
+        default_name = self._anonymized_filename(mode)
         output_path, _ = QFileDialog.getSaveFileName(
             self,
             "Anonymisiertes PDF speichern unter",
@@ -1110,7 +1318,10 @@ class MainWindow(QMainWindow):
         self._entity_count = 0
 
         # Launch worker
-        self.worker = AnonymizeWorker(self.current_pdf, output_path, provider, api_key, mode=mode)
+        self.worker = AnonymizeWorker(
+            self.current_pdf, output_path, provider, api_key,
+            mode=mode, intensity=intensity, scope=scope,
+        )
         self.worker.progress.connect(self.drop_zone.set_progress)
         self.worker.step.connect(self.drop_zone.set_step)
         self.worker.status.connect(lambda s: self.statusBar().showMessage(s))
@@ -1189,6 +1400,7 @@ class MainWindow(QMainWindow):
 
 def _check_dependencies() -> str | None:
     missing = []
+    optional_missing = []
     try:
         import fitz
     except ImportError:
@@ -1199,8 +1411,22 @@ def _check_dependencies() -> str | None:
         missing.append("openai  (pip install openai)")
     if _import_error is not None and not missing:
         missing.append(str(_import_error))
+    # Optional dependencies (warn but don't block)
+    try:
+        import ocrmypdf
+    except ImportError:
+        optional_missing.append("ocrmypdf  (pip install ocrmypdf – für OCR-Unterstützung)")
+    try:
+        import docx
+    except ImportError:
+        optional_missing.append("python-docx  (pip install python-docx – für Word-Dateien)")
     if missing:
-        return "Fehlende Abhängigkeiten:\n\n" + "\n".join(f"  •  {m}" for m in missing)
+        msg = "Fehlende Abhängigkeiten:\n\n" + "\n".join(f"  •  {m}" for m in missing)
+        if optional_missing:
+            msg += "\n\nOptional (für erweiterte Formate):\n" + "\n".join(
+                f"  •  {m}" for m in optional_missing
+            )
+        return msg
     return None
 
 
