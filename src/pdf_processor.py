@@ -23,11 +23,18 @@ Key features:
 import fitz  # PyMuPDF
 from typing import Dict, Tuple, List, Optional, Callable
 import os
+import re as _re
 import subprocess
 import tempfile
 
 
-# Black colour for redaction boxes  (R, G, B  0-1 float)
+# Redaction colour palette – subtle office-friendly dark slate instead of
+# harsh pure black.  Looks professional and doesn't "destroy" the document.
+REDACT_BG = (0.16, 0.22, 0.30)       # dark slate-blue  (redaction fill)
+REDACT_FG = (0.90, 0.92, 0.95)       # soft warm-white   (label text)
+REDACT_BG_NATURAL = (0.13, 0.18, 0.25)  # slightly darker variant for natural mode
+
+# Legacy aliases kept for summary-page styling
 BLACK = (0.0, 0.0, 0.0)
 DARK_GRAY = (0.25, 0.25, 0.25)
 WHITE = (1, 1, 1)
@@ -466,7 +473,8 @@ def _add_redaction(page, rect: fitz.Rect, label: str, mode: str = "pseudo_vars")
     Returns ``(final_rect, label, font_size)`` for the overlay pass.
     """
     if mode == "anonymize" or not label:
-        page.add_redact_annot(rect, text="", fill=BLACK)
+        # fill=None → annotation only removes content; overlay handles visuals
+        page.add_redact_annot(rect, text="", fill=None)
         return (fitz.Rect(rect), "", 0)
 
     # Target font size: match the height of the box, capped
@@ -507,14 +515,11 @@ def _add_redaction(page, rect: fitz.Rect, label: str, mode: str = "pseudo_vars")
         new_x1 = min(rect.x0 + rect.width + extra, page_rect.width - 2)
         final_rect = fitz.Rect(rect.x0, rect.y0, new_x1, rect.y1)
 
+    # fill=None → annotation only removes content; overlay handles visuals
     page.add_redact_annot(
         final_rect,
-        text=display_label,
-        fontname="helv",
-        fontsize=font_size,
-        align=fitz.TEXT_ALIGN_CENTER,
-        fill=BLACK,
-        text_color=WHITE,
+        text="",
+        fill=None,
     )
     return (fitz.Rect(final_rect), display_label, font_size)
 
@@ -524,8 +529,8 @@ def _add_redaction(page, rect: fitz.Rect, label: str, mode: str = "pseudo_vars")
 # ---------------------------------------------------------------------------
 
 # Bottom fraction of each page treated as the "signature zone" where
-# detection is more aggressive.
-_SIG_ZONE_FRACTION = 0.35
+# detection is more aggressive.  Kept conservative to avoid overblocking.
+_SIG_ZONE_FRACTION = 0.25
 
 # Maximum gap (pt) between drawing strokes to consider them one cluster.
 _CLUSTER_GAP = 14
@@ -667,7 +672,7 @@ def _image_looks_like_signature(xref: int, doc) -> bool:
         ratio = (dark + light) / total
         return ratio > 0.85  # >85% of pixels are either very dark or very light
     except Exception:
-        return True  # If we can't analyse, assume it could be a signature
+        return False  # If we can't analyse, do NOT assume signature – avoids overblocking
 
 
 def _redact_signature_images(page):
@@ -709,7 +714,7 @@ def _redact_signature_images(page):
             if 15 < w < 400 and 5 < h < 150 and 200 < area < 80_000:
                 if _image_looks_like_signature(xref, doc):
                     expanded = _safe_expand_rect(rect, page, _REDACT_MARGIN)
-                    page.add_redact_annot(expanded, text="", fill=BLACK)
+                    page.add_redact_annot(expanded, text="", fill=None)
                     continue
 
             # In signature zone: moderate tolerance for scribbles / stamps
@@ -717,7 +722,7 @@ def _redact_signature_images(page):
                 if w < page_rect.width * 0.5 and h < page_rect.height * 0.15:
                     if _image_looks_like_signature(xref, doc):
                         expanded = _safe_expand_rect(rect, page, _REDACT_MARGIN)
-                        page.add_redact_annot(expanded, text="", fill=BLACK)
+                        page.add_redact_annot(expanded, text="", fill=None)
 
 
 def _redact_signature_drawings(page):
@@ -763,8 +768,9 @@ def _redact_signature_drawings(page):
 
     for cluster_rect, stroke_count in clusters:
         in_sig_zone = cluster_rect.y0 >= sig_zone_top
-        # In the signature zone: even a single multi-point stroke can be a signature
-        min_strokes = 1 if in_sig_zone else _MIN_CLUSTER_STROKES
+        # Require at least 2 strokes even in signature zone to avoid
+        # overblocking decorative elements and separator lines
+        min_strokes = 2 if in_sig_zone else _MIN_CLUSTER_STROKES
 
         if stroke_count < min_strokes:
             continue
@@ -774,7 +780,7 @@ def _redact_signature_drawings(page):
             continue
 
         expanded = _safe_expand_rect(cluster_rect, page, _REDACT_MARGIN)
-        page.add_redact_annot(expanded, text="", fill=BLACK)
+        page.add_redact_annot(expanded, text="", fill=None)
 
 
 def _redact_ink_annotations(page):
@@ -789,7 +795,7 @@ def _redact_ink_annotations(page):
             # PDF annotation type 19 = Ink (freehand drawing)
             if annot.type[0] == 19:
                 expanded = _safe_expand_rect(fitz.Rect(annot.rect), page, _REDACT_MARGIN)
-                page.add_redact_annot(expanded, text="", fill=BLACK)
+                page.add_redact_annot(expanded, text="", fill=None)
             annot = annot.next
         except Exception:
             break
@@ -807,7 +813,7 @@ def _redact_form_signature_fields(page):
             # field_type 7 = signature field in PyMuPDF
             if widget.field_type == 7:
                 expanded = _safe_expand_rect(fitz.Rect(widget.rect), page, _REDACT_MARGIN)
-                page.add_redact_annot(expanded, text="", fill=BLACK)
+                page.add_redact_annot(expanded, text="", fill=None)
             widget = widget.next
         except Exception:
             break
@@ -885,19 +891,21 @@ def _redact_bottom_zone_scan(page):
                         dark += 1
                     total += 1
 
-            # Flag cells where > 5 % of pixels are dark (non-text marks)
-            if total > 0 and dark / total > 0.05:
+            # Flag cells where > 10 % of pixels are dark (non-text marks)
+            # Raised from 5% to reduce false positives on light backgrounds
+            if total > 0 and dark / total > 0.10:
                 suspect_cells.append(cell_page_rect)
 
     if not suspect_cells:
         return
 
     # Merge adjacent suspect cells and redact broad areas
+    # Require 5+ cells (was 3) to avoid overblocking stray marks
     clusters = _cluster_rects(suspect_cells, max_gap=12)
     for merged_rect, count in clusters:
-        if count >= 3:
+        if count >= 5:
             expanded = _safe_expand_rect(merged_rect, page, _REDACT_MARGIN)
-            page.add_redact_annot(expanded, text="", fill=BLACK)
+            page.add_redact_annot(expanded, text="", fill=None)
 
 
 # ---------------------------------------------------------------------------
@@ -989,18 +997,9 @@ def _redact_logo_images(page, repeating_xrefs: set, mode: str) -> int:
 
             if should_redact:
                 expanded = _expand_rect(rect, page_rect, 2)
-                if mode == "anonymize":
-                    page.add_redact_annot(expanded, text="", fill=BLACK)
-                else:
-                    # Both pseudo modes: show "LOGO" label
-                    font_size = min(h * 0.5, 10)
-                    if font_size < 5:
-                        font_size = 5
-                    page.add_redact_annot(
-                        expanded, text="LOGO", fontname="helv",
-                        fontsize=font_size, align=fitz.TEXT_ALIGN_CENTER,
-                        fill=BLACK, text_color=WHITE,
-                    )
+                # Subtle fill, no "LOGO" text – keeps output clean and subtle.
+                # fill=None: annotation removes content, overlay handles visuals.
+                page.add_redact_annot(expanded, text="", fill=None)
                 count += 1
 
     return count
@@ -1045,7 +1044,7 @@ def _redact_header_zone_drawings(page):
     for cluster_rect, stroke_count in clusters:
         if stroke_count >= 2:
             expanded = _expand_rect(cluster_rect, page_rect, 2)
-            page.add_redact_annot(expanded, text="", fill=BLACK)
+            page.add_redact_annot(expanded, text="", fill=None)
 
 
 # ---------------------------------------------------------------------------
@@ -1093,27 +1092,30 @@ def _detect_and_redact_signatures(page):
 # GPT-5.2 Vision-based signature detection  (catch-all for missed handwriting)
 # ---------------------------------------------------------------------------
 
-_VISION_SIG_PROMPT = """Analysiere dieses Dokumentbild PIXEL FÜR PIXEL auf handschriftliche Elemente.
+_VISION_SIG_PROMPT = """Analysiere dieses Dokumentbild auf TATSÄCHLICHE handschriftliche Unterschriften.
 
-DU MUSST FINDEN:
-1. UNTERSCHRIFTEN – handschriftliche Signaturen, Namenszüge, Autogramme. Überall auf der Seite, aber besonders unten. Auch wenn sie sehr klein, blass oder teilweise verdeckt sind.
-2. PARAPHEN & INITIALEN – kurze handschriftliche Kürzel, einzelne Buchstaben mit Schnörkeln, Abzeichnungen.
-3. HANDSCHRIFT – jedes handgeschriebene Wort, jede handgeschriebene Zahl, jeden handgeschriebenen Buchstaben. Auch einzelne Zeichen.
-4. STEMPEL – runde, ovale, rechteckige Stempel mit Text oder Symbolen.
-5. GRAFISCHE SIGNATUREN – eingescannte Unterschriften als Bilder, die wie Handschrift aussehen. Achte besonders auf Bilder die Tintenstriche zeigen.
-6. KRINGEL & SCHNÖRKEL – jede Art von handschriftlicher Markierung, Unterstreichung, Durchstreichung, Kreise um Text.
+SUCHE NUR NACH:
+1. ECHTE UNTERSCHRIFTEN – eindeutig handschriftliche Signaturen / Namenszüge
+   (geschwungene Tintenstriche, typische Unterschriften-Optik)
+2. HANDSCHRIFTLICHE PARAPHEN – kurze handschriftliche Kürzel neben Vertragsklauseln
 
-WICHTIG: Lieber 5× zu viel melden als 1× eine Unterschrift übersehen!
-Achte besonders auf blasse, kleine oder im Hintergrund liegende handschriftliche Elemente.
+NICHT MELDEN (kein Overblocking!):
+- Gedruckten Text (auch wenn er kursiv oder stylisiert ist)
+- Logos, Stempel, Wasserzeichen, Kopfzeilen-Grafiken
+- Linien, Rahmen, Tabellenbegrenzungen, Trennstriche
+- Maschinell gesetzte Namenszüge unter "Mit freundlichen Grüßen"
+- Seitenzahlen, Fußnoten, gedruckte Initialen
 
-Für JEDE Stelle gib die Position als Bounding-Box in Prozent der Seitenbreite/-höhe an.
-Mache die Boxen GROSSZÜGIG – lieber etwas zu groß als zu klein.
+WICHTIG: Lieber einmal WENIGER melden als Dokument-Inhalte zu zerstören!
+Nur EINDEUTIG handschriftliche Elemente markieren.
+
+Für jede Fundstelle gib eine ENGE Bounding-Box (Prozent der Seitenbreite/-höhe).
+Boxen sollen die Unterschrift KNAPP umschließen, nicht großzügig.
 
 Antworte NUR mit JSON:
 {
   "signatures": [
-    {"x_pct": 10, "y_pct": 85, "w_pct": 30, "h_pct": 8, "type": "unterschrift"},
-    {"x_pct": 60, "y_pct": 90, "w_pct": 25, "h_pct": 6, "type": "paraphe"}
+    {"x_pct": 10, "y_pct": 85, "w_pct": 25, "h_pct": 5, "type": "unterschrift"}
   ]
 }
 
@@ -1205,19 +1207,20 @@ def _detect_signatures_with_vision(page, api_key: str) -> List[fitz.Rect]:
 def _draw_redaction_overlays(page, overlays: list):
     """Draw filled rectangles and text labels over redacted areas.
 
-    Belt-and-suspenders approach: ensures redaction areas are visually
-    filled even if ``apply_redactions()`` fails to render the fill colour
-    correctly (happens on some programmatically generated PDFs, e.g.
-    from LibreOffice or ``_text_to_pdf``).
+    This is the ONLY visual rendering step – annotations use ``fill=None``
+    so they only delete content.  All visual fill and label drawing happens
+    here, guaranteeing consistent appearance on every PDF type.
+
+    Uses the subtle office-friendly REDACT_BG / REDACT_FG palette.
     """
     if not overlays:
         return
 
     for rect, label, font_size in overlays:
-        # Draw a solid black rectangle
+        # Draw a subtle dark-slate filled rectangle with thin border
         shape = page.new_shape()
         shape.draw_rect(rect)
-        shape.finish(fill=BLACK, color=BLACK, width=0)
+        shape.finish(fill=REDACT_BG, color=REDACT_BG, width=0)
         shape.commit()
 
         # Draw text label for pseudo modes
@@ -1231,8 +1234,42 @@ def _draw_redaction_overlays(page, overlays: list):
                 label,
                 fontname="helv",
                 fontsize=font_size,
-                color=WHITE,
+                color=REDACT_FG,
             )
+
+
+# ---------------------------------------------------------------------------
+# Legal reference / numbering protection
+# ---------------------------------------------------------------------------
+
+# Patterns that must NEVER be redacted – §§, article numbers, outline
+# numbering like "1.1.", "aa)", "1.c)", "III.", roman numerals, etc.
+_LEGAL_PROTECT_PATTERNS = [
+    _re.compile(r"^§+\s*\d"),                      # § 1, §§ 12
+    _re.compile(r"^Art\.?\s*\d"),                   # Art. 5, Art 12
+    _re.compile(r"^\d{1,4}\.\d"),                   # 1.1, 12.3.4
+    _re.compile(r"^\d{1,4}\.$"),                    # 1. 2. 3.
+    _re.compile(r"^\d{1,4}\)$"),                    # 1) 2) 3)
+    _re.compile(r"^[a-z]{1,3}\)$"),                 # a) aa) ab)
+    _re.compile(r"^[a-z]{1,3}\.$"),                 # a. b. c.
+    _re.compile(r"^\d+\.[a-z]\)"),                  # 1.a) 2.c)
+    _re.compile(r"^[IVXLCDM]{1,6}\.?$"),           # I. II. IV. XII
+    _re.compile(r"^Abs\.?\s*\d"),                   # Abs. 1, Abs 3
+    _re.compile(r"^Nr\.?\s*\d"),                    # Nr. 1, Nr 3
+    _re.compile(r"^Ziff\.?\s*\d"),                  # Ziff. 1
+    _re.compile(r"^lit\.?\s*[a-z]"),                # lit. a, lit b
+    _re.compile(r"^\(\d{1,3}\)$"),                  # (1) (2) (12)
+    _re.compile(r"^\([a-z]{1,3}\)$"),               # (a) (aa) (ab)
+]
+
+
+def _is_legal_numbering(text: str) -> bool:
+    """Return True if *text* looks like a legal reference or outline number
+    that must never be redacted."""
+    t = text.strip()
+    if not t:
+        return False
+    return any(p.match(t) for p in _LEGAL_PROTECT_PATTERNS)
 
 
 def redact_pdf(
@@ -1257,8 +1294,12 @@ def redact_pdf(
     # Pre-scan for repeating images (likely logos / letterheads)
     repeating_xrefs = _find_repeating_image_xrefs(doc)
 
-    # Sort entities by length descending so longer matches are processed first
-    sorted_entities = sorted(entity_map.keys(), key=len, reverse=True)
+    # Sort entities by length descending so longer matches are processed first.
+    # Filter out anything that looks like legal numbering / §§ references.
+    sorted_entities = sorted(
+        (k for k in entity_map.keys() if not _is_legal_numbering(k)),
+        key=len, reverse=True,
+    )
 
     logo_count = 0
     for page_idx, page in enumerate(doc):
@@ -1304,8 +1345,8 @@ def redact_pdf(
             vision_rects = _detect_signatures_with_vision(page, api_key)
             for rect in vision_rects:
                 # Tight margin around vision-detected handwriting
-                expanded = _safe_expand_rect(rect, page, _REDACT_MARGIN + 1)
-                page.add_redact_annot(expanded, text="", fill=BLACK)
+                expanded = _safe_expand_rect(rect, page, _REDACT_MARGIN)
+                page.add_redact_annot(expanded, text="", fill=None)
 
         # Collect non-entity redaction rects (signatures, logos) from
         # annotations so we can re-draw them as overlays too.
@@ -1449,17 +1490,17 @@ def _append_summary_page(
 
             cat_label = CATEGORY_LABELS.get(category, category)
 
-            # Black chip with white text (consistent for all pseudo modes)
+            # Subtle slate chip with soft-white text (matches redaction style)
             disp = label if len(label) <= 35 else label[:32] + "..."
             chip_w = fitz.get_text_length(disp, fontname="helv", fontsize=9) + 8
             chip_rect = fitz.Rect(col_var, y, col_var + chip_w, y + 14)
             shape = page.new_shape()
             shape.draw_rect(chip_rect)
-            shape.finish(color=DARK_GRAY, fill=BLACK, width=0.3)
+            shape.finish(color=REDACT_BG, fill=REDACT_BG, width=0.3)
             shape.commit()
             page.insert_text(
                 fitz.Point(col_var + 4, y + 10), disp,
-                fontname="helv", fontsize=9, color=WHITE,
+                fontname="helv", fontsize=9, color=REDACT_FG,
             )
 
             # Category

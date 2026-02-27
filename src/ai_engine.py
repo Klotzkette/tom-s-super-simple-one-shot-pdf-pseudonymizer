@@ -85,7 +85,8 @@ WICHTIGE REGELN:
 - Erkenne Entitäten in ALLEN Sprachen (Deutsch, Englisch, Französisch, Türkisch, Arabisch, etc.).
 - Ignoriere allgemeine Begriffe die keine konkreten PII sind (z.B. "Straße" allein ohne Straßenname).
 - Achte BESONDERS auf Geldbeträge und Währungen: $, €, £, ¥, USD, EUR, GBP, CHF, JPY, BTC und alle anderen Währungen.
-- NICHT anonymisieren: Rechtliche Normen, Paragraphen (§), Gesetzesverweise (z.B. "§ 123 BGB", "Art. 5 DSGVO"), Standards und Normen (ISO, DIN, EN, ÖNORM). Diese sind KEINE personenbezogenen Daten.
+- NICHT anonymisieren: Rechtliche Normen, Paragraphen (§, §§), Gesetzesverweise (z.B. "§ 123 BGB", "Art. 5 DSGVO"), Standards und Normen (ISO, DIN, EN, ÖNORM). Diese sind KEINE personenbezogenen Daten.
+- NIEMALS anonymisieren: Gliederungsziffern, Nummerierungen und Vertragsstruktur-Elemente! Dazu gehören: "1.", "1.1.", "1.1.1.", "a)", "aa)", "b)", "1.a)", "1.c)", "(1)", "(a)", "I.", "II.", "III.", "IV.", "Nr. 1", "Abs. 1", "Ziff. 3", "lit. a", römische Ziffern, Aufzählungszeichen. Diese Strukturelemente sind KEINE personenbezogenen Daten und dürfen NIEMALS als Entität erkannt werden!
 - Erkenne handschriftlich wirkende Texte, Unterschriften, Paraphen, Initialen und Kürzel als UNTERSCHRIFT.
 
 CHECKLISTE VOR DER ANTWORT – Hast du wirklich ALLE gefunden?
@@ -117,14 +118,16 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im folgenden Format, ohne weitere
   ]
 }"""
 
-USER_PROMPT_TEMPLATE = """Analysiere den folgenden Text EXTREM GRÜNDLICH und finde ALLE personenbezogenen und identifizierenden Daten. Gehe Satz für Satz vor. Übersehe KEINEN einzigen Namen, keine Adresse, keine Nummer. LIEBER ZU VIEL als ZU WENIG schwärzen.
+USER_PROMPT_TEMPLATE = """Analysiere den folgenden Text GRÜNDLICH und finde ALLE personenbezogenen und identifizierenden Daten. Gehe Satz für Satz vor. Übersehe KEINEN einzigen Namen, keine Adresse, keine Nummer.
+
+WICHTIG: Gliederungsziffern (1., 1.1., a), aa), I., II., (1), (a), Nr. 1, Abs. 2, lit. a etc.) und §§-Verweise sind KEINE Entitäten – diese NIEMALS melden!
 
 TEXT:
 \"\"\"
 {text}
 \"\"\"
 
-Antworte NUR mit dem JSON-Objekt. Denke daran: Jeden Namen finden, im Zweifel schwärzen."""
+Antworte NUR mit dem JSON-Objekt. Jeden Namen finden, aber Dokumentstruktur bewahren."""
 
 # ---------------------------------------------------------------------------
 # Intensity / scope prompt modifiers
