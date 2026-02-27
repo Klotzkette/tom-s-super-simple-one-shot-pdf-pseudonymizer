@@ -29,33 +29,14 @@ import tempfile
 
 
 # ─── Redaction colour palette ───────────────────────────────────────────────
-# Elegant, office-friendly colours that harmonise with the GUI's dark-blue
-# palette.  The boxes look intentional and professional, not destructive.
+# Pure black redaction boxes – clean, authoritative, no colour distractions.
 
-# Primary redaction fill: deep navy / charcoal – authoritative but not harsh
-REDACT_BG       = (0.14, 0.18, 0.25)  # deep navy-charcoal
-REDACT_BG_LIGHT = (0.20, 0.25, 0.33)  # lighter variant (signatures/logos)
-REDACT_FG       = (0.88, 0.91, 0.95)  # crisp off-white for label text
-REDACT_STROKE   = (0.22, 0.28, 0.38)  # subtle border stroke
+REDACT_BG       = (0.0, 0.0, 0.0)        # pure black fill
+REDACT_BG_LIGHT = (0.0, 0.0, 0.0)        # same for signatures/logos
+REDACT_FG       = (1.0, 1.0, 1.0)        # white label text
+REDACT_STROKE   = (0.18, 0.18, 0.18)     # very subtle dark border
 
-# Category-specific accent colours (left edge indicator)
-_CAT_ACCENT = {
-    "VORNAME":            (0.49, 0.72, 0.85),  # soft blue
-    "NACHNAME":           (0.49, 0.72, 0.85),  # soft blue
-    "STRASSE":            (0.55, 0.78, 0.65),  # sage green
-    "HAUSNUMMER":         (0.55, 0.78, 0.65),  # sage green
-    "STADT":              (0.55, 0.78, 0.65),  # sage green
-    "PLZ":                (0.55, 0.78, 0.65),  # sage green
-    "LAND":               (0.55, 0.78, 0.65),  # sage green
-    "EMAIL":              (0.72, 0.58, 0.82),  # muted lavender
-    "TELEFON":            (0.72, 0.58, 0.82),  # muted lavender
-    "UNTERNEHMEN":        (1.00, 0.70, 0.28),  # warm amber
-    "GELDBETRAG":         (0.90, 0.62, 0.45),  # terracotta
-    "KONTONUMMER":        (0.90, 0.62, 0.45),  # terracotta
-    "UNTERSCHRIFT":       (0.60, 0.60, 0.60),  # neutral grey
-    "LOGO":               (0.60, 0.60, 0.60),  # neutral grey
-}
-_CAT_ACCENT_DEFAULT = (0.50, 0.60, 0.75)  # slate-blue fallback
+# No category accent colours – all redaction boxes are pure black.
 
 # Legacy aliases kept for summary-page styling
 BLACK = (0.0, 0.0, 0.0)
@@ -543,8 +524,8 @@ def _add_redaction(page, rect: fitz.Rect, label: str, mode: str = "pseudo_vars",
     # Maximum width: original text rect + tiny allowance (4pt).
     # NEVER widen significantly – that would cover adjacent text.
     max_w = rect.width + 4
-    # 5pt padding: 3pt left (room for accent stripe) + 2pt right
-    padding = 5
+    # 4pt padding (2pt left + 2pt right)
+    padding = 4
 
     text_w = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
 
@@ -1154,25 +1135,30 @@ def _detect_and_redact_signatures(page, is_scan: bool = False):
 # GPT-5.2 Vision-based signature detection  (catch-all for missed handwriting)
 # ---------------------------------------------------------------------------
 
-_VISION_SIG_PROMPT = """Analysiere dieses Dokumentbild auf TATSÄCHLICHE handschriftliche Unterschriften.
+_VISION_PROMPT = """Analysiere dieses Dokumentbild auf persönlich identifizierbare visuelle Elemente.
 
-SUCHE NUR NACH:
-1. ECHTE UNTERSCHRIFTEN – eindeutig handschriftliche Signaturen / Namenszüge
-   (geschwungene Tintenstriche, typische Unterschriften-Optik)
-2. HANDSCHRIFTLICHE PARAPHEN – kurze handschriftliche Kürzel neben Vertragsklauseln
+SUCHE NACH (jeweils mit Typ angeben):
+
+1. type="unterschrift" – ECHTE handschriftliche Unterschriften / Signaturen /
+   Namenszüge (geschwungene Tintenstriche, typische Unterschriften-Optik)
+2. type="paraphe" – Handschriftliche Paraphen / Kürzel neben Vertragsklauseln
+3. type="logo" – Firmenlogos, Markenzeichen, Wappen, graphische Briefkopf-
+   Elemente (NICHT rein typographische Firmennamen, nur echte Grafiken/Icons)
+4. type="stempel" – Firmenstempel, Amtsstempel, Siegel
+5. type="foto" – Passfotos, Profilbilder, eingescannte Fotos von Personen
 
 NICHT MELDEN (kein Overblocking!):
-- Gedruckten Text (auch wenn er kursiv oder stylisiert ist)
-- Logos, Stempel, Wasserzeichen, Kopfzeilen-Grafiken
+- Gedruckten Text (auch wenn kursiv oder stylisiert)
+- Reine Text-Überschriften und Briefkopf-Text ohne Grafik
 - Linien, Rahmen, Tabellenbegrenzungen, Trennstriche
 - Maschinell gesetzte Namenszüge unter "Mit freundlichen Grüßen"
 - Seitenzahlen, Fußnoten, gedruckte Initialen
+- Hintergrundmuster, Wasserzeichen (zu groß / zerstört Inhalt)
 
-WICHTIG: Lieber einmal WENIGER melden als Dokument-Inhalte zu zerstören!
-Nur EINDEUTIG handschriftliche Elemente markieren.
+WICHTIG: Lieber WENIGER melden als Dokument-Inhalte zu zerstören!
+Nur EINDEUTIG visuelle Elemente markieren. Enge Bounding-Boxen.
 
 Für jede Fundstelle gib eine ENGE Bounding-Box (Prozent der Seitenbreite/-höhe).
-Boxen sollen die Unterschrift KNAPP umschließen, nicht großzügig.
 
 Antworte NUR mit JSON:
 {
@@ -1181,14 +1167,14 @@ Antworte NUR mit JSON:
   ]
 }
 
-Wenn KEINE Handschrift gefunden wird: {"signatures": []}"""
+Wenn NICHTS gefunden wird: {"signatures": []}"""
 
 
-def _detect_signatures_with_vision(page, api_key: str) -> List[fitz.Rect]:
-    """Use GPT-5.2 vision to detect handwritten signatures on *page*.
+def _detect_visuals_with_vision(page, api_key: str) -> List[fitz.Rect]:
+    """Use GPT-5.2 vision to detect signatures, logos, stamps on *page*.
 
     Renders the page as a JPEG, sends it to the vision model, and
-    returns a list of fitz.Rect bounding boxes for detected signatures.
+    returns a list of fitz.Rect bounding boxes for detected elements.
     """
     import base64
     import json as _json
@@ -1217,7 +1203,7 @@ def _detect_signatures_with_vision(page, api_key: str) -> List[fitz.Rect]:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": _VISION_SIG_PROMPT},
+                        {"type": "text", "text": _VISION_PROMPT},
                         {
                             "type": "image_url",
                             "image_url": {
@@ -1267,48 +1253,29 @@ def _detect_signatures_with_vision(page, api_key: str) -> List[fitz.Rect]:
 
 
 def _draw_redaction_overlays(page, overlays: list, entity_map=None):
-    """Draw elegant redaction boxes over areas where content was removed.
+    """Draw clean black redaction boxes over areas where content was removed.
 
     Annotations use ``fill=REDACT_BG`` which (a) deletes text content and
     (b) blanks scan-image pixels.  This overlay step adds the polished
     visual treatment on top, guaranteeing consistent appearance on every
     PDF type – both native text PDFs and scanned documents.
 
-    Design language:
-    - Deep navy-charcoal fill (REDACT_BG)
-    - Hair-thin lighter border stroke for crispness
-    - 2pt category-colour accent stripe on the left edge (pseudo modes)
-    - Perfectly centred off-white label text
+    Design: pure black fill, hair-thin border, centred white label text.
     """
     if not overlays:
         return
 
-    for rect, label, font_size, category in overlays:
-        accent = _CAT_ACCENT.get(category, _CAT_ACCENT_DEFAULT) if category else None
-
+    for rect, label, font_size, _category in overlays:
         # ── Filled background ──
         shape = page.new_shape()
         shape.draw_rect(rect)
         shape.finish(fill=REDACT_BG, color=REDACT_STROKE, width=0.3)
         shape.commit()
 
-        # ── Category accent stripe (left edge, 2pt wide) ──
-        if accent and rect.height >= 4 and rect.width >= 6:
-            stripe = page.new_shape()
-            stripe_w = min(2.0, rect.width * 0.15)
-            stripe_rect = fitz.Rect(
-                rect.x0, rect.y0, rect.x0 + stripe_w, rect.y1)
-            stripe.draw_rect(stripe_rect)
-            stripe.finish(fill=accent, color=accent, width=0)
-            stripe.commit()
-
         # ── Text label (pseudo modes) ──
         if label and font_size > 0:
             text_w = fitz.get_text_length(label, fontname="helv", fontsize=font_size)
-            # Offset right of accent stripe for labeled boxes
-            label_area_x0 = rect.x0 + (3.0 if accent and rect.width >= 10 else 0)
-            label_area_w = rect.x1 - label_area_x0
-            text_x = label_area_x0 + max(0, (label_area_w - text_w) / 2)
+            text_x = rect.x0 + max(0, (rect.width - text_w) / 2)
             # Precise vertical centre: baseline = centre + ascender/2
             text_y = rect.y0 + (rect.height + font_size * 0.72) / 2
             page.insert_text(
@@ -1427,11 +1394,12 @@ def redact_pdf(
         # Redact signatures, handwriting, ink annotations, etc.
         _detect_and_redact_signatures(page, is_scan=page_is_scan)
 
-        # GPT-5.2 vision-based signature detection (catch-all)
+        # GPT-5.2 vision: detect signatures, logos, stamps, photos.
+        # Runs on EVERY page; first & last pages are most likely to
+        # contain logos (letterhead) and signatures (sign-off).
         if api_key:
-            vision_rects = _detect_signatures_with_vision(page, api_key)
+            vision_rects = _detect_visuals_with_vision(page, api_key)
             for rect in vision_rects:
-                # Tight margin around vision-detected handwriting
                 expanded = _safe_expand_rect(rect, page, _REDACT_MARGIN)
                 page.add_redact_annot(expanded, text="", fill=REDACT_BG)
 
@@ -1498,13 +1466,13 @@ def _summary_footer(page, page_w, page_h, margin):
     sep = page.new_shape()
     sep_y = page_h - margin - 8
     sep.draw_line(fitz.Point(margin, sep_y), fitz.Point(page_w - margin, sep_y))
-    sep.finish(color=(0.82, 0.84, 0.86), width=0.4)
+    sep.finish(color=(0.80, 0.80, 0.80), width=0.4)
     sep.commit()
     # Footer text
     page.insert_text(
         fitz.Point(margin, page_h - margin + 2),
         "Tom's Super Simple PDF Anonymizer  \u00b7  Alle Metadaten entfernt",
-        fontname="helv", fontsize=7, color=(0.60, 0.62, 0.65),
+        fontname="helv", fontsize=7, color=(0.55, 0.55, 0.55),
     )
 
 
@@ -1542,19 +1510,19 @@ def _append_summary_page(
 
     page.insert_text(
         fitz.Point(margin, y + 18), title,
-        fontname="helv", fontsize=16, color=REDACT_BG,
+        fontname="helv", fontsize=16, color=BLACK,
     )
     y += 32
     page.insert_text(
         fitz.Point(margin, y + 10), subtitle,
-        fontname="helv", fontsize=9, color=(0.45, 0.48, 0.52),
+        fontname="helv", fontsize=9, color=(0.40, 0.40, 0.40),
     )
     y += 22
 
     # Elegant thin rule
     rule = page.new_shape()
     rule.draw_line(fitz.Point(margin, y), fitz.Point(page_w - margin, y))
-    rule.finish(color=(0.78, 0.80, 0.84), width=0.5)
+    rule.finish(color=(0.75, 0.75, 0.75), width=0.5)
     rule.commit()
     y += 18
 
@@ -1574,40 +1542,39 @@ def _append_summary_page(
         stats_text += f"  \u00b7  {logo_count} Logo(s)"
     page.insert_text(
         fitz.Point(margin, y + 9), stats_text,
-        fontname="helv", fontsize=8, color=(0.50, 0.53, 0.58),
+        fontname="helv", fontsize=8, color=(0.45, 0.45, 0.45),
     )
     y += 22
 
-    # ── Mode: anonymize – category count with accent dots ──
+    # ── Mode: anonymize – clean category count list ──
     if mode == "anonymize":
         for cat in sorted(cat_counts, key=lambda c: CATEGORY_LABELS.get(c, c)):
             if y > usable_bottom:
                 _summary_footer(page, page_w, page_h, margin)
                 page, y = _summary_new_page(doc, page_w, page_h, margin)
 
-            accent = _CAT_ACCENT.get(cat, _CAT_ACCENT_DEFAULT)
             cat_label = CATEGORY_LABELS.get(cat, cat)
             count = cat_counts[cat]
 
-            # Accent dot
+            # Black bullet
             dot = page.new_shape()
-            dot.draw_circle(fitz.Point(margin + 4, y + 5), 2.5)
-            dot.finish(fill=accent, color=accent, width=0)
+            dot.draw_circle(fitz.Point(margin + 4, y + 5), 2)
+            dot.finish(fill=BLACK, color=BLACK, width=0)
             dot.commit()
 
             # Category name
             page.insert_text(
                 fitz.Point(margin + 14, y + 9), cat_label,
-                fontname="helv", fontsize=9, color=(0.20, 0.22, 0.25),
+                fontname="helv", fontsize=9, color=BLACK,
             )
             # Count (right-aligned)
             count_str = str(count)
             cw = fitz.get_text_length(count_str, fontname="helv", fontsize=9)
             page.insert_text(
                 fitz.Point(page_w - margin - cw, y + 9), count_str,
-                fontname="helv", fontsize=9, color=(0.35, 0.38, 0.42),
+                fontname="helv", fontsize=9, color=(0.35, 0.35, 0.35),
             )
-            # Light dotted line between name and count
+            # Dotted leader line
             dots_x0 = margin + 14 + fitz.get_text_length(
                 cat_label, fontname="helv", fontsize=9) + 6
             dots_x1 = page_w - margin - cw - 6
@@ -1615,21 +1582,18 @@ def _append_summary_page(
                 dl = page.new_shape()
                 dl.draw_line(fitz.Point(dots_x0, y + 7),
                              fitz.Point(dots_x1, y + 7))
-                dl.finish(color=(0.85, 0.86, 0.88), width=0.3,
+                dl.finish(color=(0.80, 0.80, 0.80), width=0.3,
                           dashes="[2 3]")
                 dl.commit()
 
             y += 18
 
-    # ── Mode: pseudo – grouped table with chips ──
+    # ── Mode: pseudo – grouped table with black chips ──
     else:
-        # Define columns
         col_chip = margin
         is_natural = mode == "pseudo_natural"
-        col_cat = margin + (180 if is_natural else 100)
         col_len = page_w - margin - 40
 
-        # Sorted category order
         sorted_cats = sorted(cat_entries.keys(),
                              key=lambda c: CATEGORY_LABELS.get(c, c))
 
@@ -1638,23 +1602,21 @@ def _append_summary_page(
             if not entries:
                 continue
 
-            # Category section header
             if y > usable_bottom - 30:
                 _summary_footer(page, page_w, page_h, margin)
                 page, y = _summary_new_page(doc, page_w, page_h, margin)
 
-            accent = _CAT_ACCENT.get(cat, _CAT_ACCENT_DEFAULT)
             cat_label = CATEGORY_LABELS.get(cat, cat)
 
-            # Accent bar + category title
+            # Black bar + category title
             ab = page.new_shape()
             ab.draw_rect(fitz.Rect(margin, y, margin + 3, y + 12))
-            ab.finish(fill=accent, color=accent, width=0)
+            ab.finish(fill=BLACK, color=BLACK, width=0)
             ab.commit()
             page.insert_text(
                 fitz.Point(margin + 8, y + 9),
                 f"{cat_label}  ({len(entries)})",
-                fontname="helv", fontsize=8.5, color=(0.28, 0.30, 0.35),
+                fontname="helv", fontsize=8.5, color=BLACK,
             )
             y += 18
 
@@ -1663,7 +1625,7 @@ def _append_summary_page(
                     _summary_footer(page, page_w, page_h, margin)
                     page, y = _summary_new_page(doc, page_w, page_h, margin)
 
-                # Chip (matching redaction style)
+                # Black chip
                 disp = label if len(label) <= 30 else label[:27] + "\u2026"
                 chip_w = fitz.get_text_length(
                     disp, fontname="helv", fontsize=8) + 8
@@ -1672,28 +1634,22 @@ def _append_summary_page(
                     col_chip + 6, y, col_chip + 6 + chip_w, y + chip_h)
                 cs = page.new_shape()
                 cs.draw_rect(chip_rect)
-                cs.finish(color=REDACT_STROKE, fill=REDACT_BG, width=0.25)
+                cs.finish(color=BLACK, fill=BLACK, width=0.25)
                 cs.commit()
-                # Accent dot inside chip
-                ad = page.new_shape()
-                ad.draw_circle(
-                    fitz.Point(chip_rect.x0 + 4.5, y + chip_h / 2), 1.5)
-                ad.finish(fill=accent, color=accent, width=0)
-                ad.commit()
                 page.insert_text(
-                    fitz.Point(chip_rect.x0 + 9, y + 8.5), disp,
-                    fontname="helv", fontsize=8, color=REDACT_FG,
+                    fitz.Point(chip_rect.x0 + 4, y + 8.5), disp,
+                    fontname="helv", fontsize=8, color=WHITE,
                 )
 
                 # Length hint
                 hint = f"{len(original_text)} Zeichen"
                 page.insert_text(
                     fitz.Point(col_len, y + 8.5), hint,
-                    fontname="helv", fontsize=7, color=(0.58, 0.60, 0.63),
+                    fontname="helv", fontsize=7, color=(0.50, 0.50, 0.50),
                 )
                 y += 16
 
-            y += 6  # space between category groups
+            y += 6
 
     # ── Footer ──
     _summary_footer(page, page_w, page_h, margin)

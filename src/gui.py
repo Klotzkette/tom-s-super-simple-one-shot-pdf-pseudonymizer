@@ -2,9 +2,8 @@
 PDF Anonymizer – Modern PyQt6 GUI with drag & drop, API key settings,
 and one-click anonymisation workflow.
 
-Design: Dark theme with turquoise accents, smooth animations, clear
-visual states (idle → processing → success/error), and a clickable
-drop zone that doubles as a progress indicator.
+Design: Clean black-and-white theme, Arial font, no bold text.
+Elegant and sober – Swiss-style minimalism.
 """
 
 import os
@@ -151,34 +150,28 @@ def load_scope() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Colour palette
+# Colour palette – sober black & white
 # ---------------------------------------------------------------------------
 
-# Friendlier, warmer colour palette
-BLUE            = "#7EB8DA"
-BLUE_MID        = "#6EAAD0"
-BLUE_DARK       = "#5A9AC4"
-BLUE_GLOW       = "#90C8EA"
+BG_DARK         = "#FFFFFF"
+BG_CARD         = "#F7F7F7"
+BG_SURFACE      = "#EFEFEF"
+BG_HOVER        = "#E5E5E5"
 
-ORANGE          = "#FFB347"
-ORANGE_MID      = "#FFA033"
-ORANGE_DARK     = "#F08C20"
+ACCENT          = "#000000"
+ACCENT_HOVER    = "#333333"
+ACCENT_SOFT     = "#555555"
 
-BG_DARK         = "#1A1D23"
-BG_CARD         = "#22262E"
-BG_SURFACE      = "#2A2F38"
-BG_HOVER        = "#363C47"
+BORDER          = "#D0D0D0"
+BORDER_FOCUS    = "#000000"
 
-BORDER          = "#3A4050"
-BORDER_FOCUS    = "#7EB8DA"
+TEXT_PRIMARY    = "#000000"
+TEXT_SECONDARY  = "#555555"
+TEXT_MUTED      = "#999999"
 
-TEXT_PRIMARY    = "#F5F5F0"
-TEXT_SECONDARY  = "#A0A8B4"
-TEXT_MUTED      = "#7A8290"
-
-SUCCESS         = "#6FCF7F"
-ERROR           = "#F07070"
-WARNING         = "#E0B040"
+SUCCESS         = "#333333"
+ERROR           = "#CC0000"
+WARNING         = "#666666"
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +180,10 @@ WARNING         = "#E0B040"
 
 STYLESHEET = f"""
 /* ── Global ────────────────────────────────────────────── */
+* {{
+    font-family: "Arial", "Helvetica Neue", sans-serif;
+    font-weight: normal;
+}}
 QMainWindow {{
     background-color: {BG_DARK};
 }}
@@ -202,14 +199,12 @@ QLabel {{
 /* ── Typography ────────────────────────────────────────── */
 QLabel#titleLabel {{
     color: {TEXT_PRIMARY};
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: -0.5px;
+    font-size: 22px;
+    letter-spacing: -0.3px;
 }}
 QLabel#titleAccent {{
-    color: {ORANGE};
-    font-size: 24px;
-    font-weight: 700;
+    color: {TEXT_PRIMARY};
+    font-size: 22px;
 }}
 QLabel#subtitleLabel {{
     color: {TEXT_SECONDARY};
@@ -217,22 +212,20 @@ QLabel#subtitleLabel {{
     line-height: 1.5;
 }}
 QLabel#dropIcon {{
-    font-size: 56px;
+    font-size: 48px;
     background: transparent;
 }}
 QLabel#dropLabel {{
     color: {TEXT_PRIMARY};
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 14px;
 }}
 QLabel#dropHint {{
     color: {TEXT_MUTED};
     font-size: 11px;
 }}
 QLabel#fileLabel {{
-    color: {BLUE};
+    color: {TEXT_PRIMARY};
     font-size: 13px;
-    font-weight: 600;
     padding: 4px 0px;
 }}
 QLabel#statusLabel {{
@@ -240,46 +233,40 @@ QLabel#statusLabel {{
     font-size: 12px;
 }}
 QLabel#stepLabel {{
-    color: {ORANGE};
+    color: {TEXT_PRIMARY};
     font-size: 11px;
-    font-weight: 600;
 }}
 QLabel#providerPill {{
-    color: {BLUE};
-    background-color: rgba(91, 164, 207, 0.08);
-    border: 1px solid rgba(91, 164, 207, 0.25);
+    color: {TEXT_PRIMARY};
+    background-color: {BG_SURFACE};
+    border: 1px solid {BORDER};
     border-radius: 10px;
     padding: 3px 10px;
     font-size: 11px;
-    font-weight: 600;
 }}
 QLabel#successLabel {{
     color: {SUCCESS};
     font-size: 13px;
-    font-weight: 600;
 }}
 QLabel#errorLabel {{
     color: {ERROR};
     font-size: 13px;
-    font-weight: 600;
 }}
 
 /* ── Buttons ───────────────────────────────────────────── */
 QPushButton {{
-    background-color: {BLUE_DARK};
-    color: {TEXT_PRIMARY};
+    background-color: {ACCENT};
+    color: #FFFFFF;
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 10px 24px;
     font-size: 13px;
-    font-weight: 600;
 }}
 QPushButton:hover {{
-    background-color: {BLUE_MID};
+    background-color: {ACCENT_HOVER};
 }}
 QPushButton:pressed {{
-    background-color: {ORANGE};
-    color: {BG_DARK};
+    background-color: {ACCENT_SOFT};
 }}
 QPushButton:disabled {{
     background-color: {BG_SURFACE};
@@ -289,27 +276,24 @@ QPushButton#settingsBtn {{
     background-color: transparent;
     color: {TEXT_SECONDARY};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 6px 14px;
     font-size: 12px;
-    font-weight: 500;
 }}
 QPushButton#settingsBtn:hover {{
     color: {TEXT_PRIMARY};
-    border-color: {TEXT_SECONDARY};
-    background-color: {BG_SURFACE};
+    border-color: {TEXT_PRIMARY};
 }}
 QPushButton#selectBtn {{
     background-color: transparent;
-    color: {BLUE};
-    border: 1px solid {BLUE_DARK};
-    border-radius: 8px;
+    color: {TEXT_PRIMARY};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
     padding: 8px 20px;
     font-size: 13px;
 }}
 QPushButton#selectBtn:hover {{
-    background-color: rgba(91, 164, 207, 0.1);
-    border-color: {BLUE};
+    border-color: {TEXT_PRIMARY};
 }}
 QPushButton#selectBtn:disabled {{
     color: {TEXT_MUTED};
@@ -318,37 +302,35 @@ QPushButton#selectBtn:disabled {{
 }}
 QPushButton#openFolderBtn {{
     background-color: transparent;
-    color: {SUCCESS};
-    border: 1px solid rgba(63, 185, 80, 0.4);
-    border-radius: 8px;
+    color: {TEXT_PRIMARY};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
     padding: 6px 14px;
     font-size: 12px;
 }}
 QPushButton#openFolderBtn:hover {{
-    background-color: rgba(63, 185, 80, 0.1);
-    border-color: {SUCCESS};
+    border-color: {TEXT_PRIMARY};
 }}
 
 /* ── Progress ──────────────────────────────────────────── */
 QProgressBar {{
     border: none;
-    border-radius: 4px;
+    border-radius: 3px;
     text-align: center;
     color: {TEXT_PRIMARY};
     background-color: {BG_SURFACE};
-    max-height: 8px;
-    min-height: 8px;
+    max-height: 6px;
+    min-height: 6px;
     font-size: 0px;
 }}
 QProgressBar::chunk {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 {BLUE_DARK}, stop:1 {ORANGE});
-    border-radius: 4px;
+    background-color: {ACCENT};
+    border-radius: 3px;
 }}
 
 /* ── Inputs ────────────────────────────────────────────── */
 QComboBox {{
-    background-color: {BG_SURFACE};
+    background-color: {BG_CARD};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
     border-radius: 6px;
@@ -356,10 +338,10 @@ QComboBox {{
     font-size: 13px;
 }}
 QComboBox:focus {{
-    border-color: {BLUE_DARK};
+    border-color: {BORDER_FOCUS};
 }}
 QComboBox QAbstractItemView {{
-    background-color: {BG_CARD};
+    background-color: {BG_DARK};
     color: {TEXT_PRIMARY};
     selection-background-color: {BG_SURFACE};
     border: 1px solid {BORDER};
@@ -370,19 +352,19 @@ QComboBox::drop-down {{
     padding-right: 8px;
 }}
 QLineEdit {{
-    background-color: {BG_SURFACE};
+    background-color: {BG_CARD};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
     border-radius: 6px;
     padding: 8px 12px;
     font-size: 13px;
-    selection-background-color: {BLUE_DARK};
+    selection-background-color: {BG_HOVER};
 }}
 QLineEdit:focus {{
-    border-color: {BLUE_DARK};
+    border-color: {BORDER_FOCUS};
 }}
 QLineEdit[valid="true"] {{
-    border-color: {SUCCESS};
+    border-color: {ACCENT};
 }}
 
 /* ── Groups ────────────────────────────────────────────── */
@@ -393,7 +375,6 @@ QGroupBox {{
     margin-top: 14px;
     padding: 20px 16px 12px 16px;
     font-size: 13px;
-    font-weight: 600;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
@@ -420,30 +401,30 @@ QStatusBar {{
 QFrame#dropZone {{
     background-color: {BG_CARD};
     border: 2px dashed {BORDER};
-    border-radius: 16px;
+    border-radius: 12px;
 }}
 QFrame#dropZone:hover {{
-    border-color: {BLUE_DARK};
-    background-color: rgba(91, 164, 207, 0.03);
+    border-color: {ACCENT_SOFT};
+    background-color: {BG_SURFACE};
 }}
 QFrame#dropZone[dragOver="true"] {{
-    border-color: {ORANGE};
+    border-color: {ACCENT};
     border-style: solid;
-    background-color: rgba(255, 159, 67, 0.06);
+    background-color: {BG_SURFACE};
 }}
 QFrame#dropZone[processing="true"] {{
-    border-color: {BLUE_DARK};
+    border-color: {ACCENT};
     border-style: solid;
 }}
 QFrame#dropZone[success="true"] {{
-    border-color: {SUCCESS};
+    border-color: {ACCENT};
     border-style: solid;
-    background-color: rgba(63, 185, 80, 0.04);
+    background-color: {BG_CARD};
 }}
 QFrame#dropZone[error="true"] {{
     border-color: {ERROR};
     border-style: solid;
-    background-color: rgba(248, 81, 73, 0.04);
+    background-color: #FFF5F5;
 }}
 
 /* ── Scrollbar (thin) ──────────────────────────────────── */
@@ -782,7 +763,7 @@ class SettingsDialog(QDialog):
 
         # -- Header --
         header = QLabel("Einstellungen")
-        header.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 18px; font-weight: 700;")
+        header.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 18px;")
         layout.addWidget(header)
         desc = QLabel("Hinterlegen Sie Ihren OpenAI API-Key. Es wird GPT-5.2 verwendet.")
         desc.setWordWrap(True)
@@ -794,10 +775,10 @@ class SettingsDialog(QDialog):
         # -- Model info --
         model_label = QLabel("Modell:  GPT-5.2")
         model_label.setStyleSheet(
-            f"color: {BLUE}; font-size: 13px; font-weight: 600; "
-            f"background-color: rgba(91, 164, 207, 0.08); "
-            f"border: 1px solid rgba(91, 164, 207, 0.25); "
-            f"border-radius: 8px; padding: 8px 14px;"
+            f"color: {TEXT_PRIMARY}; font-size: 13px; "
+            f"background-color: {BG_SURFACE}; "
+            f"border: 1px solid {BORDER}; "
+            f"border-radius: 6px; padding: 8px 14px;"
         )
         layout.addWidget(model_label)
 
@@ -910,16 +891,16 @@ class _ChipGroup(QFrame):
         for key, chip in self._chips.items():
             if key == self._selected:
                 chip.setStyleSheet(
-                    f"QPushButton {{ background-color: {ORANGE}; color: {BG_DARK}; "
+                    f"QPushButton {{ background-color: {ACCENT}; color: #FFFFFF; "
                     f"border: none; border-radius: 6px; padding: 4px 14px; "
-                    f"font-size: 12px; font-weight: 600; }}"
+                    f"font-size: 12px; }}"
                 )
             else:
                 chip.setStyleSheet(
-                    f"QPushButton {{ background-color: {BG_SURFACE}; color: {TEXT_SECONDARY}; "
+                    f"QPushButton {{ background-color: {BG_CARD}; color: {TEXT_SECONDARY}; "
                     f"border: 1px solid {BORDER}; border-radius: 6px; padding: 4px 14px; "
-                    f"font-size: 12px; font-weight: 500; }}"
-                    f"QPushButton:hover {{ border-color: {ORANGE}; color: {TEXT_PRIMARY}; }}"
+                    f"font-size: 12px; }}"
+                    f"QPushButton:hover {{ border-color: {ACCENT}; color: {TEXT_PRIMARY}; }}"
                 )
 
     @property
@@ -945,7 +926,7 @@ class ModeSelectionDialog(QDialog):
         # Header
         header = QLabel("Verarbeitungsoptionen")
         header.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 16px; font-weight: 700;"
+            f"color: {TEXT_PRIMARY}; font-size: 16px;"
         )
         layout.addWidget(header)
         layout.addSpacing(2)
@@ -953,7 +934,7 @@ class ModeSelectionDialog(QDialog):
         # -- Scope section --
         scope_label = QLabel("Umfang")
         scope_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: 600; "
+            f"color: {TEXT_SECONDARY}; font-size: 11px; "
             f"text-transform: uppercase; letter-spacing: 1px;"
         )
         layout.addWidget(scope_label)
@@ -977,7 +958,7 @@ class ModeSelectionDialog(QDialog):
         # -- Mode section --
         mode_label = QLabel("Modus  (zum Starten anklicken)")
         mode_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: 600; "
+            f"color: {TEXT_SECONDARY}; font-size: 11px; "
             f"text-transform: uppercase; letter-spacing: 1px;"
         )
         layout.addWidget(mode_label)
@@ -989,17 +970,17 @@ class ModeSelectionDialog(QDialog):
             is_saved = mode_key == saved_mode
             card = QFrame()
             card.setCursor(Qt.CursorShape.PointingHandCursor)
-            border_col = ORANGE if is_saved else BORDER
+            border_col = ACCENT if is_saved else BORDER
             card.setStyleSheet(f"""
                 QFrame {{
-                    background-color: {BG_SURFACE};
+                    background-color: {BG_CARD};
                     border: {"2" if is_saved else "1"}px solid {border_col};
-                    border-radius: 10px;
+                    border-radius: 8px;
                     padding: 12px 14px;
                 }}
                 QFrame:hover {{
-                    border-color: {ORANGE};
-                    background-color: rgba(255, 179, 71, 0.06);
+                    border-color: {ACCENT};
+                    background-color: {BG_SURFACE};
                 }}
             """)
 
@@ -1009,7 +990,7 @@ class ModeSelectionDialog(QDialog):
 
             title_label = QLabel(title)
             title_label.setStyleSheet(
-                f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600; "
+                f"color: {TEXT_PRIMARY}; font-size: 13px; "
                 f"border: none; background: transparent;"
             )
             card_layout.addWidget(title_label)
@@ -1156,9 +1137,9 @@ class MainWindow(QMainWindow):
         else:
             self.provider_pill.setText("GPT-5.2  (kein Key)")
             self.provider_pill.setStyleSheet(
-                f"color: {WARNING}; background-color: rgba(210, 153, 34, 0.08); "
-                f"border: 1px solid rgba(210, 153, 34, 0.25); "
-                f"border-radius: 10px; padding: 3px 10px; font-size: 11px; font-weight: 600;"
+                f"color: {TEXT_MUTED}; background-color: {BG_SURFACE}; "
+                f"border: 1px solid {BORDER}; "
+                f"border-radius: 10px; padding: 3px 10px; font-size: 11px;"
             )
             return
         self.provider_pill.setStyleSheet("")  # reset to default from stylesheet
@@ -1419,17 +1400,17 @@ def run_app():
     palette.setColor(QPalette.ColorRole.Text, QColor(TEXT_PRIMARY))
     palette.setColor(QPalette.ColorRole.Button, QColor(BG_SURFACE))
     palette.setColor(QPalette.ColorRole.ButtonText, QColor(TEXT_PRIMARY))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(BLUE))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(BG_DARK))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(ACCENT))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
     palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(BG_CARD))
     palette.setColor(QPalette.ColorRole.ToolTipText, QColor(TEXT_PRIMARY))
     palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(TEXT_MUTED))
     app.setPalette(palette)
 
-    # Default font
-    font = app.font()
-    font.setFamily("Arial, Segoe UI, SF Pro Display, system-ui, sans-serif")
+    # Default font – Arial, no bold
+    font = QFont("Arial")
     font.setPointSize(10)
+    font.setWeight(QFont.Weight.Normal)
     app.setFont(font)
 
     window = MainWindow()
