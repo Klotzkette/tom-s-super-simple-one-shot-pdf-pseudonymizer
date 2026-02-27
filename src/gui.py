@@ -303,18 +303,19 @@ QPushButton#openFolderBtn:hover {{
 
 /* ── Progress ──────────────────────────────────────────── */
 QProgressBar {{
-    border: none;
-    border-radius: 3px;
+    border: 1px solid {BORDER};
+    border-radius: 6px;
     text-align: center;
     color: {TEXT_PRIMARY};
     background-color: {BG_SURFACE};
-    max-height: 6px;
-    min-height: 6px;
-    font-size: 0px;
+    min-height: 22px;
+    max-height: 22px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px;
 }}
 QProgressBar::chunk {{
     background-color: {ACCENT};
-    border-radius: 3px;
+    border-radius: 5px;
 }}
 
 /* ── Inputs ────────────────────────────────────────────── */
@@ -488,8 +489,10 @@ class DropZone(QFrame):
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(False)
-        self.progress_bar.setFixedHeight(6)
-        self.progress_bar.setMaximumWidth(320)
+        self.progress_bar.setFixedHeight(22)
+        self.progress_bar.setMinimumWidth(360)
+        self.progress_bar.setMaximumWidth(420)
+        self.progress_bar.setFormat("%p %")
         layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.set_state(self.STATE_IDLE)
