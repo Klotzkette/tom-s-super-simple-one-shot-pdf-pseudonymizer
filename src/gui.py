@@ -170,7 +170,7 @@ ERROR           = "#CC0000"
 STYLESHEET = f"""
 /* ── Global ────────────────────────────────────────────── */
 * {{
-    font-family: "Arial", "Helvetica Neue", sans-serif;
+    font-family: "SF Pro Display", "Helvetica Neue", "Arial", sans-serif;
     font-weight: normal;
 }}
 QMainWindow {{
@@ -188,29 +188,30 @@ QLabel {{
 /* ── Typography ────────────────────────────────────────── */
 QLabel#titleLabel {{
     color: {TEXT_PRIMARY};
-    font-size: 22px;
-    letter-spacing: -0.3px;
+    font-size: 23px;
+    letter-spacing: -0.4px;
 }}
 QLabel#titleAccent {{
     color: {TEXT_PRIMARY};
-    font-size: 22px;
+    font-size: 23px;
+    letter-spacing: -0.4px;
 }}
 QLabel#subtitleLabel {{
     color: {TEXT_SECONDARY};
     font-size: 12px;
-    line-height: 1.5;
+    line-height: 1.6;
 }}
 QLabel#dropIcon {{
-    font-size: 48px;
+    font-size: 52px;
     background: transparent;
 }}
 QLabel#dropLabel {{
     color: {TEXT_PRIMARY};
-    font-size: 14px;
+    font-size: 15px;
 }}
 QLabel#dropHint {{
     color: {TEXT_MUTED};
-    font-size: 11px;
+    font-size: 12px;
 }}
 QLabel#fileLabel {{
     color: {TEXT_PRIMARY};
@@ -223,14 +224,14 @@ QLabel#statusLabel {{
 }}
 QLabel#stepLabel {{
     color: {TEXT_PRIMARY};
-    font-size: 11px;
+    font-size: 12px;
 }}
 QLabel#providerPill {{
     color: {TEXT_PRIMARY};
     background-color: {BG_SURFACE};
     border: 1px solid {BORDER};
-    border-radius: 10px;
-    padding: 3px 10px;
+    border-radius: 14px;
+    padding: 5px 14px;
     font-size: 11px;
 }}
 QLabel#successLabel {{
@@ -247,8 +248,8 @@ QPushButton {{
     background-color: {ACCENT};
     color: #FFFFFF;
     border: none;
-    border-radius: 6px;
-    padding: 10px 24px;
+    border-radius: 14px;
+    padding: 10px 28px;
     font-size: 13px;
 }}
 QPushButton:hover {{
@@ -260,62 +261,65 @@ QPushButton:pressed {{
 QPushButton:disabled {{
     background-color: {BG_SURFACE};
     color: {TEXT_MUTED};
+    border-radius: 14px;
 }}
 QPushButton#settingsBtn {{
-    background-color: transparent;
+    background-color: {BG_SURFACE};
     color: {TEXT_SECONDARY};
     border: 1px solid {BORDER};
-    border-radius: 6px;
-    padding: 6px 14px;
+    border-radius: 14px;
+    padding: 7px 18px;
     font-size: 12px;
 }}
 QPushButton#settingsBtn:hover {{
     color: {TEXT_PRIMARY};
-    border-color: {TEXT_PRIMARY};
+    background-color: {BG_HOVER};
+    border-color: {ACCENT_SOFT};
 }}
 QPushButton#selectBtn {{
-    background-color: transparent;
+    background-color: {BG_SURFACE};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 6px;
-    padding: 8px 20px;
+    border-radius: 14px;
+    padding: 9px 22px;
     font-size: 13px;
 }}
 QPushButton#selectBtn:hover {{
-    border-color: {TEXT_PRIMARY};
+    background-color: {BG_HOVER};
+    border-color: {ACCENT_SOFT};
 }}
 QPushButton#selectBtn:disabled {{
     color: {TEXT_MUTED};
     border-color: {BORDER};
-    background-color: transparent;
+    background-color: {BG_SURFACE};
 }}
 QPushButton#openFolderBtn {{
-    background-color: transparent;
+    background-color: {BG_SURFACE};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 6px;
-    padding: 6px 14px;
+    border-radius: 14px;
+    padding: 7px 18px;
     font-size: 12px;
 }}
 QPushButton#openFolderBtn:hover {{
-    border-color: {TEXT_PRIMARY};
+    background-color: {BG_HOVER};
+    border-color: {ACCENT_SOFT};
 }}
 
 /* ── Progress ──────────────────────────────────────────── */
 QProgressBar {{
-    border: 1px solid {BORDER};
-    border-radius: 6px;
+    border: none;
+    border-radius: 11px;
     text-align: center;
     color: {TEXT_PRIMARY};
     background-color: {BG_SURFACE};
     min-height: 22px;
     max-height: 22px;
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 12px;
+    font-size: 11px;
 }}
 QProgressBar::chunk {{
     background-color: {ACCENT};
-    border-radius: 5px;
+    border-radius: 11px;
 }}
 
 /* ── Inputs ────────────────────────────────────────────── */
@@ -323,30 +327,32 @@ QComboBox {{
     background-color: {BG_CARD};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 6px;
-    padding: 8px 12px;
+    border-radius: 12px;
+    padding: 10px 14px;
     font-size: 13px;
 }}
 QComboBox:focus {{
     border-color: {BORDER_FOCUS};
 }}
 QComboBox QAbstractItemView {{
-    background-color: {BG_DARK};
+    background-color: {BG_CARD};
     color: {TEXT_PRIMARY};
     selection-background-color: {BG_SURFACE};
     border: 1px solid {BORDER};
+    border-radius: 10px;
     outline: none;
+    padding: 4px;
 }}
 QComboBox::drop-down {{
     border: none;
-    padding-right: 8px;
+    padding-right: 10px;
 }}
 QLineEdit {{
     background-color: {BG_CARD};
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 6px;
-    padding: 8px 12px;
+    border-radius: 12px;
+    padding: 10px 14px;
     font-size: 13px;
     selection-background-color: {BG_HOVER};
 }}
@@ -361,15 +367,15 @@ QLineEdit[valid="true"] {{
 QGroupBox {{
     color: {TEXT_PRIMARY};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: 16px;
     margin-top: 14px;
-    padding: 20px 16px 12px 16px;
+    padding: 22px 18px 14px 18px;
     font-size: 13px;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
-    left: 14px;
-    padding: 0 8px;
+    left: 18px;
+    padding: 0 10px;
     color: {TEXT_PRIMARY};
 }}
 
@@ -384,14 +390,14 @@ QStatusBar {{
     color: {TEXT_MUTED};
     font-size: 11px;
     border-top: 1px solid {BORDER};
-    padding: 2px 8px;
+    padding: 4px 12px;
 }}
 
 /* ── Drop zone ─────────────────────────────────────────── */
 QFrame#dropZone {{
     background-color: {BG_CARD};
     border: 2px dashed {BORDER};
-    border-radius: 12px;
+    border-radius: 24px;
 }}
 QFrame#dropZone:hover {{
     border-color: {ACCENT_SOFT};
@@ -403,11 +409,12 @@ QFrame#dropZone[dragOver="true"] {{
     background-color: {BG_SURFACE};
 }}
 QFrame#dropZone[processing="true"] {{
-    border-color: {ACCENT};
+    border-color: {ACCENT_SOFT};
     border-style: solid;
+    background-color: {BG_CARD};
 }}
 QFrame#dropZone[success="true"] {{
-    border-color: {ACCENT};
+    border-color: {ACCENT_SOFT};
     border-style: solid;
     background-color: {BG_CARD};
 }}
@@ -417,15 +424,22 @@ QFrame#dropZone[error="true"] {{
     background-color: {BG_CARD};
 }}
 
-/* ── Scrollbar (thin) ──────────────────────────────────── */
+/* ── Scrollbar (macOS-style) ──────────────────────────── */
 QScrollBar:vertical {{
     background-color: transparent;
-    width: 6px;
+    width: 8px;
+    margin: 4px 2px;
 }}
 QScrollBar::handle:vertical {{
     background-color: {BG_HOVER};
-    border-radius: 3px;
+    border-radius: 4px;
     min-height: 30px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background-color: {ACCENT_SOFT};
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0px;
 }}
 """
 
@@ -750,11 +764,11 @@ class SettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setSpacing(18)
-        layout.setContentsMargins(28, 28, 28, 24)
+        layout.setContentsMargins(32, 32, 32, 28)
 
         # -- Header --
         header = QLabel("Einstellungen")
-        header.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 18px;")
+        header.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 20px; letter-spacing: -0.3px;")
         layout.addWidget(header)
         desc = QLabel("Hinterlegen Sie Ihren OpenAI API-Key. Es wird GPT-5.2 verwendet.")
         desc.setWordWrap(True)
@@ -769,7 +783,7 @@ class SettingsDialog(QDialog):
             f"color: {TEXT_PRIMARY}; font-size: 13px; "
             f"background-color: {BG_SURFACE}; "
             f"border: 1px solid {BORDER}; "
-            f"border-radius: 6px; padding: 8px 14px;"
+            f"border-radius: 12px; padding: 10px 16px;"
         )
         layout.addWidget(model_label)
 
@@ -865,7 +879,7 @@ class _ChipGroup(QFrame):
             chip = QPushButton(label)
             chip.setToolTip(tooltip)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
-            chip.setFixedHeight(32)
+            chip.setFixedHeight(36)
             chip.clicked.connect(lambda checked, k=key: self._on_click(k))
             self._chips[key] = chip
             layout.addWidget(chip)
@@ -883,15 +897,16 @@ class _ChipGroup(QFrame):
             if key == self._selected:
                 chip.setStyleSheet(
                     f"QPushButton {{ background-color: {ACCENT}; color: #FFFFFF; "
-                    f"border: none; border-radius: 6px; padding: 4px 14px; "
+                    f"border: none; border-radius: 16px; padding: 6px 18px; "
                     f"font-size: 12px; }}"
                 )
             else:
                 chip.setStyleSheet(
                     f"QPushButton {{ background-color: {BG_CARD}; color: {TEXT_SECONDARY}; "
-                    f"border: 1px solid {BORDER}; border-radius: 6px; padding: 4px 14px; "
+                    f"border: 1px solid {BORDER}; border-radius: 16px; padding: 6px 18px; "
                     f"font-size: 12px; }}"
-                    f"QPushButton:hover {{ border-color: {ACCENT}; color: {TEXT_PRIMARY}; }}"
+                    f"QPushButton:hover {{ background-color: {BG_HOVER}; "
+                    f"border-color: {ACCENT_SOFT}; color: {TEXT_PRIMARY}; }}"
                 )
 
     @property
@@ -911,13 +926,13 @@ class ModeSelectionDialog(QDialog):
         self.selected_scope: str = load_scope()
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(12)
+        layout.setContentsMargins(32, 28, 32, 24)
 
         # Header
         header = QLabel("Verarbeitungsoptionen")
         header.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 16px;"
+            f"color: {TEXT_PRIMARY}; font-size: 18px; letter-spacing: -0.3px;"
         )
         layout.addWidget(header)
         layout.addSpacing(2)
@@ -941,7 +956,7 @@ class ModeSelectionDialog(QDialog):
         # -- Divider --
         divider = QFrame()
         divider.setFixedHeight(1)
-        divider.setStyleSheet(f"background-color: {BORDER};")
+        divider.setStyleSheet(f"background-color: {BORDER}; border-radius: 1px;")
         layout.addWidget(divider)
 
         layout.addSpacing(4)
@@ -966,11 +981,11 @@ class ModeSelectionDialog(QDialog):
                 QFrame {{
                     background-color: {BG_CARD};
                     border: {"2" if is_saved else "1"}px solid {border_col};
-                    border-radius: 8px;
-                    padding: 12px 14px;
+                    border-radius: 16px;
+                    padding: 14px 18px;
                 }}
                 QFrame:hover {{
-                    border-color: {ACCENT};
+                    border-color: {ACCENT_SOFT};
                     background-color: {BG_SURFACE};
                 }}
             """)
@@ -1130,7 +1145,7 @@ class MainWindow(QMainWindow):
             self.provider_pill.setStyleSheet(
                 f"color: {TEXT_MUTED}; background-color: {BG_SURFACE}; "
                 f"border: 1px solid {BORDER}; "
-                f"border-radius: 10px; padding: 3px 10px; font-size: 11px;"
+                f"border-radius: 14px; padding: 5px 14px; font-size: 11px;"
             )
             return
         self.provider_pill.setStyleSheet("")  # reset to default from stylesheet
