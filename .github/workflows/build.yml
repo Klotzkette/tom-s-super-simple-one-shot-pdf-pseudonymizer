@@ -108,7 +108,7 @@ jobs:
 
             ### Voraussetzungen
             - Windows 10/11 oder macOS 12+
-            - Ein API-Key fuer OpenAI, Anthropic (Claude) oder Google Gemini
+                        - Ein API-Key fuer OpenAI (GPT-5.4)
             - PDFs muessen Texterkennung (OCR) enthalten
 
             ### Erste Schritte
