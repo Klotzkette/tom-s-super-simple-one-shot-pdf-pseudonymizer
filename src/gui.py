@@ -804,7 +804,7 @@ class AnonymizeWorker(QThread):
 # ---------------------------------------------------------------------------
 
 PROVIDER_NAMES = {
-    "openai":    "OpenAI (GPT-5.2)",
+    "openai":    "OpenAI (GPT-5.4)",
 }
 PROVIDER_KEYS = ["openai"]
 PROVIDER_PLACEHOLDERS = {
@@ -835,7 +835,7 @@ class SettingsDialog(QDialog):
         layout.addSpacing(8)
 
         # -- Model info pill --
-        model_label = QLabel("\u2728  Modell: GPT-5.2")
+        model_label = QLabel("\u2728  Modell: GPT-5.4")
         model_label.setStyleSheet(
             f"color: {ACCENT}; font-size: 12px; "
             f"background-color: #EBF4FF; "
@@ -1226,10 +1226,10 @@ class MainWindow(QMainWindow):
     def _update_provider_pill(self):
         has_key = bool(load_api_key("openai"))
         if has_key:
-            self.provider_pill.setText("GPT-5.2")
+            self.provider_pill.setText("GPT-5.4")
             self.provider_pill.setStyleSheet("")  # reset to default from stylesheet
         else:
-            self.provider_pill.setText("GPT-5.2  \u00b7  kein Key")
+            self.provider_pill.setText("GPT-5.4  \u00b7  kein Key")
             self.provider_pill.setStyleSheet(
                 f"color: {ERROR}; background-color: {ERROR_BG}; "
                 f"border: 1px solid {ERROR_BORDER}; "
