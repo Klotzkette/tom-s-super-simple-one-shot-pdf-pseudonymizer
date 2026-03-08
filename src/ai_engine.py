@@ -1,5 +1,5 @@
 """
-AI Engine – OpenAI GPT-5.2 powered PII entity detection.
+AI Engine – OpenAI GPT-5.4 powered PII entity detection.
 
 Handles large texts by splitting into chunks that fit within AI token limits
 and merging results, ensuring consistent variable assignment across chunks.
@@ -244,7 +244,7 @@ def _parse_ai_response(response_text: str) -> List[Dict[str, str]]:
 # Provider implementations
 # ---------------------------------------------------------------------------
 
-MODEL = "gpt-5.2"
+MODEL = "gpt-5.4"
 
 
 def detect_entities_openai(
@@ -253,7 +253,7 @@ def detect_entities_openai(
     intensity: str = INTENSITY_HARD,
     scope: str = SCOPE_ALL,
 ) -> List[Dict[str, str]]:
-    """Use OpenAI GPT-5.2 to detect PII entities."""
+    """Use OpenAI GPT-5.4 to detect PII entities."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
     user_prompt = _build_user_prompt(text, intensity, scope)
@@ -278,7 +278,7 @@ def detect_entities_openai(
 def generate_natural_replacements_openai(
     api_key: str, entities: List[Dict[str, str]]
 ) -> Dict[str, str]:
-    """Use OpenAI GPT-5.2 to generate natural-sounding replacement values."""
+    """Use OpenAI GPT-5.4 to generate natural-sounding replacement values."""
     # Build concise list (deduplicated, skip signatures)
     items = []
     seen: set = set()
