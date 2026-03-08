@@ -73,9 +73,9 @@ pyinstaller build.spec
 
 | Anbieter | Modell | Kosten |
 |---|---|---|
-| OpenAI | GPT-4o | nach Verbrauch |
-| Anthropic | Claude Sonnet | nach Verbrauch |
-| Google | Gemini 2.0 Flash | nach Verbrauch |
+| OpenAI | GPT-5.2 | nach Verbrauch |
+
+
 
 ## Datenschutz
 
