@@ -43,14 +43,81 @@ Die anonymisierten Stellen werden **türkis** überdeckt, die Variable wird in w
   - Standard-URL: `http://127.0.0.1:1234/v1`
   - Kein API-Key erforderlich
 
-## LM Studio einrichten
+## LM Studio einrichten – Schritt für Schritt
 
-1. [LM Studio herunterladen](https://lmstudio.ai/) und installieren
-2. Ein Qwen3-Modell im Model Hub suchen und herunterladen (z. B. `qwen3-14b`)
-3. Das Modell laden und den **lokalen Server starten** (Tab „Local Server" → „Start Server")
-4. Im PDF-Anonymizer unter ⚙ Einstellungen:
-   - **Base URL**: `http://127.0.0.1:1234/v1`
-   - **Modellname**: exakt so wie in LM Studio angezeigt (z. B. `qwen3-14b`)
+### Schritt 1 – LM Studio installieren
+
+[LM Studio herunterladen](https://lmstudio.ai/) und installieren (Windows, macOS oder Linux).
+
+---
+
+### Schritt 2 – Qwen-Modell herunterladen
+
+1. LM Studio öffnen
+2. Oben auf **„Search"** (Lupe) klicken
+3. In die Suchleiste **`Qwen3`** eingeben
+4. Ein Modell auswählen – Empfehlung je nach verfügbarem RAM/VRAM:
+
+| Modell (Suchbegriff in LM Studio) | RAM/VRAM | Qualität |
+|---|---|---|
+| `Qwen3-14B` | ~10 GB | Sehr gut |
+| `Qwen3-8B` | ~6 GB | Gut |
+| `Qwen3-4B` | ~3 GB | Ausreichend |
+
+5. Auf **„Download"** klicken und warten bis der Download abgeschlossen ist
+
+> **Tipp:** Wenn kein Qwen3 verfügbar ist, funktioniert auch `Qwen2.5-7B-Instruct` oder `Qwen2.5-14B-Instruct`.
+
+---
+
+### Schritt 3 – Modell in LM Studio laden
+
+1. Im linken Menü auf **„My Models"** (oder „Chat") klicken
+2. Das heruntergeladene Qwen-Modell auswählen und auf **„Load"** klicken
+3. Warten bis das Modell vollständig geladen ist (Statusanzeige unten)
+
+---
+
+### Schritt 4 – Lokalen API-Server starten
+
+1. Im linken Menü auf **„Local Server"** klicken (Symbol: `<->` oder „Developer")
+2. Sicherstellen dass der Port auf **`1234`** eingestellt ist
+3. Auf **„Start Server"** klicken
+4. Der Server läuft, wenn unten grün **„Server running"** erscheint
+
+Der Server ist jetzt erreichbar unter: `http://127.0.0.1:1234/v1`
+
+> **Wichtig:** LM Studio muss laufen und das Modell geladen sein, **bevor** Sie ein PDF verarbeiten.
+
+---
+
+### Schritt 5 – Modellnamen herausfinden
+
+Der exakte Modellname wird im PDF-Anonymizer benötigt. So finden Sie ihn:
+
+- In LM Studio: Unter „Local Server" sehen Sie unter **„Model loaded"** den genauen Modellnamen
+- Alternativ: `http://127.0.0.1:1234/v1/models` im Browser öffnen → dort steht der `id`-Wert
+
+Typische Modellnamen:
+```
+qwen3-14b
+qwen3-8b
+qwen2.5-7b-instruct
+lmstudio-community/Qwen3-14B-GGUF
+```
+
+---
+
+### Schritt 6 – PDF-Anonymizer konfigurieren
+
+1. PDF-Anonymizer starten
+2. Oben rechts auf **⚙ Einstellungen** klicken
+3. Folgendes eintragen:
+   - **Base URL**: `http://127.0.0.1:1234/v1` (Standardwert, normalerweise unverändert lassen)
+   - **Modellname**: den exakten Namen aus Schritt 5 (z. B. `qwen3-14b`)
+4. Auf **✓ Speichern** klicken
+
+Fertig – jetzt können Sie PDFs per Drag & Drop anonymisieren.
 
 ## Installation & Build (Windows EXE)
 
