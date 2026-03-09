@@ -1,5 +1,8 @@
 """
-AI Engine – OpenAI GPT-5.4 powered PII entity detection.
+AI Engine – LM Studio (lokal) powered PII entity detection.
+
+Kommuniziert via OpenAI-kompatibler API gegen LM Studio auf localhost.
+Unterstützt Qwen3 und andere lokale Modelle.
 
 Handles large texts by splitting into chunks that fit within AI token limits
 and merging results, ensuring consistent variable assignment across chunks.
@@ -42,6 +45,13 @@ _PERSON_CATEGORIES = {
 # response.  Overlapping avoids splitting an entity at a boundary.
 CHUNK_SIZE = 60_000
 CHUNK_OVERLAP = 2_000
+
+# ---------------------------------------------------------------------------
+# LM Studio defaults
+# ---------------------------------------------------------------------------
+
+DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
+DEFAULT_MODEL = "qwen3-14b"
 
 # ---------------------------------------------------------------------------
 # Prompt that instructs the AI to find all PII entities
@@ -241,30 +251,28 @@ def _parse_ai_response(response_text: str) -> List[Dict[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# Provider implementations
+# LM Studio implementation
 # ---------------------------------------------------------------------------
 
-MODEL = "gpt-5.4"
-
-
-def detect_entities_openai(
-    api_key: str,
+def detect_entities_lm_studio(
+    base_url: str,
+    model: str,
     text: str,
     intensity: str = INTENSITY_HARD,
     scope: str = SCOPE_ALL,
 ) -> List[Dict[str, str]]:
-    """Use OpenAI GPT-5.4 to detect PII entities."""
+    """Use a local LM Studio model to detect PII entities."""
     from openai import OpenAI
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(base_url=base_url, api_key="lm-studio")
     user_prompt = _build_user_prompt(text, intensity, scope)
     response = client.chat.completions.create(
-        model=MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.0,
-        max_completion_tokens=16384,
+        max_tokens=16384,
     )
     entities = _parse_ai_response(response.choices[0].message.content)
 
@@ -275,10 +283,12 @@ def detect_entities_openai(
     return entities
 
 
-def generate_natural_replacements_openai(
-    api_key: str, entities: List[Dict[str, str]]
+def generate_natural_replacements_lm_studio(
+    base_url: str,
+    model: str,
+    entities: List[Dict[str, str]],
 ) -> Dict[str, str]:
-    """Use OpenAI GPT-5.4 to generate natural-sounding replacement values."""
+    """Use a local LM Studio model to generate natural-sounding replacement values."""
     # Build concise list (deduplicated, skip signatures)
     items = []
     seen: set = set()
@@ -293,9 +303,9 @@ def generate_natural_replacements_openai(
     entities_json = json.dumps(items, ensure_ascii=False, indent=2)
 
     from openai import OpenAI
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(base_url=base_url, api_key="lm-studio")
     response = client.chat.completions.create(
-        model=MODEL,
+        model=model,
         messages=[
             {"role": "system", "content": REPLACEMENT_SYSTEM_PROMPT},
             {"role": "user", "content": REPLACEMENT_USER_TEMPLATE.format(
@@ -303,7 +313,7 @@ def generate_natural_replacements_openai(
             )},
         ],
         temperature=0.7,
-        max_completion_tokens=16384,
+        max_tokens=16384,
     )
     text = response.choices[0].message.content.strip()
     fence = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
@@ -316,15 +326,6 @@ def generate_natural_replacements_openai(
 # ---------------------------------------------------------------------------
 # Unified interface
 # ---------------------------------------------------------------------------
-
-PROVIDERS = {
-    "openai": detect_entities_openai,
-}
-
-REPLACEMENT_PROVIDERS = {
-    "openai": generate_natural_replacements_openai,
-}
-
 
 def _split_text(text: str) -> List[str]:
     """Split *text* into overlapping chunks that fit within AI token limits."""
@@ -352,32 +353,30 @@ def _deduplicate_entities(all_entities: List[Dict[str, str]]) -> List[Dict[str, 
 
 
 def detect_entities(
-    provider: str,
-    api_key: str,
+    base_url: str,
+    model: str,
     text: str,
     progress_callback=None,
     intensity: str = INTENSITY_HARD,
     scope: str = SCOPE_ALL,
 ) -> List[Dict[str, str]]:
     """
-    Detect PII entities using the chosen AI provider.
+    Detect PII entities using a local LM Studio model.
 
     Automatically splits large texts into chunks and merges results.
     *progress_callback(int)* is called with 0-100 percentage.
 
     Returns a list of dicts: [{"text": "...", "category": "..."}, ...]
     """
-    func = PROVIDERS.get(provider)
-    if func is None:
-        raise ValueError(f"Unknown provider: {provider}")
-
     chunks = _split_text(text)
     all_entities: List[Dict[str, str]] = []
 
     for i, chunk in enumerate(chunks):
         if progress_callback:
             progress_callback(int((i / len(chunks)) * 100))
-        chunk_entities = func(api_key, chunk, intensity=intensity, scope=scope)
+        chunk_entities = detect_entities_lm_studio(
+            base_url, model, chunk, intensity=intensity, scope=scope,
+        )
         all_entities.extend(chunk_entities)
 
     if progress_callback:
@@ -387,18 +386,15 @@ def detect_entities(
 
 
 def generate_natural_replacements(
-    provider: str,
-    api_key: str,
+    base_url: str,
+    model: str,
     entities: List[Dict[str, str]],
 ) -> Dict[str, str]:
-    """Generate natural-sounding replacement values using the chosen AI provider.
+    """Generate natural-sounding replacement values using a local LM Studio model.
 
     Returns a dict mapping original text -> replacement text.
     """
-    func = REPLACEMENT_PROVIDERS.get(provider)
-    if func is None:
-        raise ValueError(f"Unknown provider: {provider}")
-    return func(api_key, entities)
+    return generate_natural_replacements_lm_studio(base_url, model, entities)
 
 
 def assign_variables(

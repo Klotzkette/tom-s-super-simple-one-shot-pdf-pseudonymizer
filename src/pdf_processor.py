@@ -147,20 +147,20 @@ REGELN:
 - Wenn kein Text erkennbar: antworte mit [KEIN TEXT]"""
 
 
-def _gpt_vision_ocr(pdf_path: str, api_key: str,
-                     status_callback: Optional[Callable[[str], None]] = None) -> str:
-    """Use GPT-5.2 Vision to extract text from image-based PDF pages.
+def _lm_studio_vision_ocr(pdf_path: str, base_url: str, model: str,
+                           status_callback: Optional[Callable[[str], None]] = None) -> str:
+    """Use a local LM Studio vision model to extract text from image-based PDF pages.
 
-    Renders each page as a JPEG, sends to GPT-5.2 Vision for text
-    extraction.  Much better quality than Tesseract OCR, especially for
-    handwriting, complex layouts, and multi-language documents.
+    Renders each page as a JPEG, sends to the vision model for text
+    extraction.  Requires a multimodal model loaded in LM Studio
+    (e.g. qwen2-vl or similar).
 
     Returns the path to a new text-based PDF containing the extracted text.
     """
     import base64
     from openai import OpenAI
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(base_url=base_url, api_key="lm-studio")
     doc = fitz.open(pdf_path)
     all_text: List[str] = []
     total = len(doc)
@@ -183,7 +183,7 @@ def _gpt_vision_ocr(pdf_path: str, api_key: str,
 
         try:
             resp = client.chat.completions.create(
-                model="gpt-5.2",
+                model=model,
                 messages=[{
                     "role": "user",
                     "content": [
@@ -195,7 +195,7 @@ def _gpt_vision_ocr(pdf_path: str, api_key: str,
                     ],
                 }],
                 temperature=0.0,
-                max_completion_tokens=8192,
+                max_tokens=8192,
             )
             page_text = resp.choices[0].message.content.strip()
             if page_text == "[KEIN TEXT]":
@@ -209,7 +209,7 @@ def _gpt_vision_ocr(pdf_path: str, api_key: str,
 
     if not full_text.strip():
         raise ValueError(
-            "GPT-5.2 Vision konnte keinen Text im Dokument erkennen."
+            "Das Vision-Modell konnte keinen Text im Dokument erkennen."
         )
 
     return _text_to_pdf(full_text)
@@ -341,16 +341,17 @@ def _docx_to_pdf(docx_path: str) -> str:
     return _text_to_pdf(full_text)
 
 
-def _do_ocr(pdf_path: str, api_key: Optional[str],
+def _do_ocr(pdf_path: str, base_url: Optional[str] = None,
+            model: Optional[str] = None,
             status_callback: Optional[Callable[[str], None]] = None) -> str:
-    """Extract text from an image-based PDF using GPT Vision (preferred)
+    """Extract text from an image-based PDF using LM Studio vision (preferred)
     or Tesseract OCR (fallback).  Returns path to a text-based temp PDF."""
-    # --- Primary: GPT-5.2 Vision ---
-    if api_key:
+    # --- Primary: LM Studio vision model ---
+    if base_url and model:
         try:
             if status_callback:
                 status_callback("KI-Texterkennung wird durchgeführt …")
-            return _gpt_vision_ocr(pdf_path, api_key, status_callback)
+            return _lm_studio_vision_ocr(pdf_path, base_url, model, status_callback)
         except Exception:
             pass  # fall through to Tesseract
 
@@ -362,15 +363,16 @@ def _do_ocr(pdf_path: str, api_key: Optional[str],
 
 def prepare_input(
     input_path: str,
-    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
     status_callback: Optional[Callable[[str], None]] = None,
 ) -> str:
     """Prepare an input file for processing.
 
     Accepts PDF, DOCX, DOC, JPG, and JPEG.
     Converts non-PDF files to PDF.  For image-based content, uses
-    GPT-5.2 Vision (if *api_key* given) or Tesseract OCR as fallback
-    to extract text.
+    LM Studio vision (if *base_url* and *model* given) or Tesseract OCR
+    as fallback to extract text.
 
     Returns the path to a PDF with a text layer.
     If the returned path differs from *input_path*, it is a temporary file
@@ -388,7 +390,7 @@ def prepare_input(
         if status_callback:
             status_callback("Bild wird in PDF konvertiert …")
         pdf_path = _image_to_pdf(input_path)
-        result = _do_ocr(pdf_path, api_key, status_callback)
+        result = _do_ocr(pdf_path, base_url, model, status_callback)
         # Clean up intermediate image PDF
         if result != pdf_path:
             try:
@@ -403,7 +405,7 @@ def prepare_input(
         pdf_path = _docx_to_pdf(input_path)
         # Ensure we have an extractable text layer
         if not _has_text_layer(pdf_path):
-            result = _do_ocr(pdf_path, api_key, status_callback)
+            result = _do_ocr(pdf_path, base_url, model, status_callback)
             if result != pdf_path:
                 try:
                     os.unlink(pdf_path)
@@ -416,7 +418,7 @@ def prepare_input(
     if _has_text_layer(input_path):
         return input_path  # already usable
 
-    return _do_ocr(input_path, api_key, status_callback)
+    return _do_ocr(input_path, base_url, model, status_callback)
 
 
 # ---------------------------------------------------------------------------
@@ -1250,12 +1252,13 @@ Antworte NUR mit JSON:
 Wenn NICHTS gefunden wird: {"signatures": []}"""
 
 
-def _detect_visuals_with_vision(page, api_key: str) -> List[Tuple[fitz.Rect, str]]:
-    """Use GPT-5.2 vision to detect signatures, logos, stamps on *page*.
+def _detect_visuals_with_vision(page, base_url: str, model: str) -> List[Tuple[fitz.Rect, str]]:
+    """Use a local LM Studio vision model to detect signatures, logos, stamps on *page*.
 
     Renders the page as a JPEG, sends it to the vision model, and
     returns a list of ``(fitz.Rect, type_str)`` tuples.
     *type_str* is one of: unterschrift, paraphe, logo, stempel, foto.
+    Requires a multimodal model loaded in LM Studio (e.g. qwen2-vl).
     """
     import base64
 
@@ -1273,12 +1276,12 @@ def _detect_visuals_with_vision(page, api_key: str) -> List[Tuple[fitz.Rect, str
     img_bytes = pix.tobytes("jpeg", jpg_quality=80)
     b64_image = base64.b64encode(img_bytes).decode("utf-8")
 
-    # Call GPT-5.2 vision
+    # Call LM Studio vision model
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(base_url=base_url, api_key="lm-studio")
         response = client.chat.completions.create(
-            model="gpt-5.2",
+            model=model,
             messages=[
                 {
                     "role": "user",
@@ -1295,7 +1298,7 @@ def _detect_visuals_with_vision(page, api_key: str) -> List[Tuple[fitz.Rect, str
                 },
             ],
             temperature=0.0,
-            max_completion_tokens=2048,
+            max_tokens=2048,
         )
     except Exception:
         return []
@@ -1578,7 +1581,8 @@ def redact_pdf(
     entity_map: Dict[str, Tuple[str, str]],
     mode: str = "pseudo_vars",
     progress_callback=None,
-    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> str:
     """
     Create a redacted copy of *pdf_path* at *output_path*.
@@ -1651,11 +1655,12 @@ def redact_pdf(
         # Redact signatures, handwriting, ink annotations, etc.
         _detect_and_redact_signatures(page, is_scan=page_is_scan)
 
-        # GPT-5.2 vision: detect signatures, logos, stamps, photos.
+        # LM Studio vision: detect signatures, logos, stamps, photos.
         # Only runs on pages likely to contain visual PII (first, last,
         # pages with signature-indicators) to avoid unnecessary API calls.
-        if api_key and _page_needs_vision(page, page_idx, total_pages):
-            vision_hits = _detect_visuals_with_vision(page, api_key)
+        # Requires a multimodal model loaded in LM Studio.
+        if base_url and model and _page_needs_vision(page, page_idx, total_pages):
+            vision_hits = _detect_visuals_with_vision(page, base_url, model)
             for rect, vis_type in vision_hits:
                 # Generous margin for handwriting – flourishes/tails often
                 # extend beyond the core bounding box.
