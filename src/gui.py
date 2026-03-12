@@ -1374,8 +1374,23 @@ class MainWindow(QMainWindow):
         self.worker.entity_count.connect(self._on_entity_count)
         self.worker.finished_ok.connect(self.on_success)
         self.worker.finished_err.connect(self.on_error)
-        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker.finished.connect(self._cleanup_worker)
         self.worker.start()
+
+    def _cleanup_worker(self):
+        """Safely clean up the worker thread after it finishes."""
+        if self.worker:
+            self.worker.deleteLater()
+            self.worker = None
+
+    def closeEvent(self, event):
+        """Ensure running worker is stopped before the window is destroyed."""
+        if self.worker and self.worker.isRunning():
+            self.worker.finished.disconnect()
+            self.worker.quit()
+            self.worker.wait(5000)  # wait up to 5 seconds
+            self.worker = None
+        super().closeEvent(event)
 
     def _on_entity_count(self, count: int):
         self._entity_count = count
