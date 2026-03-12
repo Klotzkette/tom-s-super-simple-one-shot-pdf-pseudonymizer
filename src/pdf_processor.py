@@ -20,6 +20,7 @@ Key features:
 - Automatic OCR for image-based inputs and PDFs without text layer.
 """
 
+import base64
 import fitz  # PyMuPDF
 from typing import Dict, Tuple, List, Optional, Callable
 import os
@@ -157,32 +158,29 @@ def _gpt_vision_ocr(pdf_path: str, api_key: str,
     extraction.  Much better quality than Tesseract OCR, especially for
     handwriting, complex layouts, and multi-language documents.
 
+    Sends up to 4 pages concurrently to speed up multi-page documents.
+
     Returns the path to a new text-based PDF containing the extracted text.
     """
-    import base64
-    from openai import OpenAI
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    client = OpenAI(api_key=api_key)
+    client = _get_openai_client(api_key)
     doc = fitz.open(pdf_path)
-    all_text: List[str] = []
     total = len(doc)
 
+    # Pre-render all pages to base64 JPEGs (must happen in main thread –
+    # PyMuPDF objects are not thread-safe)
+    page_images: List[Optional[str]] = []
+    mat = fitz.Matrix(200.0 / 72.0, 200.0 / 72.0)
     for idx in range(total):
-        page = doc[idx]
-        if status_callback:
-            status_callback(f"KI liest Seite {idx + 1}/{total} …")
-
-        # Render at 200 DPI for good quality
-        mat = fitz.Matrix(200.0 / 72.0, 200.0 / 72.0)
         try:
-            pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+            pix = doc[idx].get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+            page_images.append(base64.b64encode(pix.tobytes("jpeg")).decode("utf-8"))
         except Exception:
-            all_text.append("")
-            continue
+            page_images.append(None)
+    doc.close()
 
-        img_bytes = pix.tobytes("jpeg")
-        b64 = base64.b64encode(img_bytes).decode("utf-8")
-
+    def _ocr_one_page(idx: int, b64: str) -> Tuple[int, str]:
         try:
             resp = client.chat.completions.create(
                 model="gpt-5.2",
@@ -199,14 +197,30 @@ def _gpt_vision_ocr(pdf_path: str, api_key: str,
                 temperature=0.0,
                 max_completion_tokens=8192,
             )
-            page_text = resp.choices[0].message.content.strip()
-            if page_text == "[KEIN TEXT]":
-                page_text = ""
-            all_text.append(page_text)
+            text = resp.choices[0].message.content.strip()
+            return (idx, "" if text == "[KEIN TEXT]" else text)
         except Exception:
-            all_text.append("")
+            return (idx, "")
 
-    doc.close()
+    # Send pages to the API concurrently (max 4 workers)
+    results: dict = {}
+    with ThreadPoolExecutor(max_workers=min(4, total)) as pool:
+        futures = {}
+        for idx, b64 in enumerate(page_images):
+            if b64 is None:
+                results[idx] = ""
+                continue
+            futures[pool.submit(_ocr_one_page, idx, b64)] = idx
+
+        done_count = 0
+        for future in as_completed(futures):
+            page_idx, text = future.result()
+            results[page_idx] = text
+            done_count += 1
+            if status_callback:
+                status_callback(f"KI liest Seite {done_count}/{total} …")
+
+    all_text = [results.get(i, "") for i in range(total)]
     full_text = "\n\n".join(all_text)
 
     if not full_text.strip():
@@ -570,6 +584,20 @@ def _expand_rect(rect: fitz.Rect, page_rect: fitz.Rect, margin: float = 15) -> f
     )
 
 
+_page_blocks_cache: dict = {}  # page.number → list of blocks
+
+
+def _get_page_blocks(page) -> list:
+    """Return text blocks for *page*, cached to avoid repeated extraction."""
+    key = id(page)
+    if key not in _page_blocks_cache:
+        try:
+            _page_blocks_cache[key] = page.get_text("blocks")
+        except Exception:
+            _page_blocks_cache[key] = []
+    return _page_blocks_cache[key]
+
+
 def _safe_expand_rect(rect: fitz.Rect, page, margin: float = 2) -> fitz.Rect:
     """Expand *rect* by *margin* but shrink back if it would overlap text
     blocks that lie OUTSIDE the original rect.
@@ -580,9 +608,8 @@ def _safe_expand_rect(rect: fitz.Rect, page, margin: float = 2) -> fitz.Rect:
     page_rect = page.rect
     expanded = _expand_rect(rect, page_rect, margin)
 
-    try:
-        blocks = page.get_text("blocks")
-    except Exception:
+    blocks = _get_page_blocks(page)
+    if not blocks:
         return expanded
 
     for block in blocks:
@@ -680,20 +707,19 @@ def _image_looks_like_signature(xref: int, doc) -> bool:
         pix = fitz.Pixmap(doc, xref)
         if pix.n > 1:
             pix = fitz.Pixmap(fitz.csGRAY, pix)
-        samples = pix.samples
+        samples = memoryview(pix.samples)
         total = len(samples)
         if total < 10:
             return False
         # Sample up to 4000 pixels evenly for speed
         if total > 4000:
             step = total // 4000
-            sampled = samples[::step]
-            n = len(sampled)
+            sampled = bytes(samples[::step])
         else:
-            sampled = samples
-            n = total
-        dark = sum(1 for b in sampled if b < 100)
-        light = sum(1 for b in sampled if b > 180)
+            sampled = bytes(samples)
+        n = len(sampled)
+        dark = sum(b < 100 for b in sampled)
+        light = sum(b > 180 for b in sampled)
         ratio = (dark + light) / n
         if ratio > 0.70:
             return True
@@ -911,7 +937,7 @@ def _redact_bottom_zone_scan(page):
     if pw < 2 or ph < 2:
         return
 
-    samples = pix.samples  # grayscale bytes (one byte per pixel)
+    mv = memoryview(pix.samples)  # grayscale bytes – memoryview for fast slicing
 
     # Divide into a grid of ~30px cells (larger = faster, still good detection)
     n_cols = max(1, pw // 30)
@@ -940,14 +966,13 @@ def _redact_bottom_zone_scan(page):
             px1 = min(int((col + 1) * cell_w), pw)
             py1 = min(int((row + 1) * cell_h), ph)
 
+            # Count dark pixels using fast memoryview slicing
             dark = 0
             total = 0
             for y in range(py0, py1):
-                offset = y * pw
-                for x in range(px0, px1):
-                    if samples[offset + x] < 120:
-                        dark += 1
-                    total += 1
+                row_slice = mv[y * pw + px0 : y * pw + px1]
+                total += len(row_slice)
+                dark += sum(b < 120 for b in row_slice)
 
             # Flag cells where > 10 % of pixels are dark (non-text marks)
             # Raised from 5% to reduce false positives on light backgrounds
@@ -1260,6 +1285,17 @@ Antworte NUR mit JSON:
 Wenn NICHTS gefunden wird: {"signatures": []}"""
 
 
+_openai_client_cache: dict = {}  # api_key → OpenAI client
+
+
+def _get_openai_client(api_key: str):
+    """Return a cached OpenAI client instance for the given key."""
+    if api_key not in _openai_client_cache:
+        from openai import OpenAI
+        _openai_client_cache[api_key] = OpenAI(api_key=api_key)
+    return _openai_client_cache[api_key]
+
+
 def _detect_visuals_with_vision(page, api_key: str) -> List[Tuple[fitz.Rect, str]]:
     """Use GPT-5.2 vision to detect signatures, logos, stamps on *page*.
 
@@ -1267,26 +1303,23 @@ def _detect_visuals_with_vision(page, api_key: str) -> List[Tuple[fitz.Rect, str
     returns a list of ``(fitz.Rect, type_str)`` tuples.
     *type_str* is one of: unterschrift, paraphe, logo, stempel, foto.
     """
-    import base64
-
     page_rect = page.rect
 
-    # Render at 200 DPI – good detail for signatures, fast upload (vs 300 DPI)
-    scale = 200.0 / 72.0
+    # Render at 150 DPI – sufficient detail for signatures, faster upload
+    scale = 150.0 / 72.0
     mat = fitz.Matrix(scale, scale)
     try:
         pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
     except Exception:
         return []
 
-    # Convert to JPEG (quality 80 – good balance of detail and speed)
-    img_bytes = pix.tobytes("jpeg", jpg_quality=80)
+    # Convert to JPEG (quality 65 – good balance of detail and speed)
+    img_bytes = pix.tobytes("jpeg", jpg_quality=65)
     b64_image = base64.b64encode(img_bytes).decode("utf-8")
 
     # Call GPT-5.2 vision
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+        client = _get_openai_client(api_key)
         response = client.chat.completions.create(
             model="gpt-5.2",
             messages=[
@@ -1621,6 +1654,9 @@ def redact_pdf(
     for page_idx, page in enumerate(doc):
         if progress_callback:
             progress_callback(int((page_idx / total_pages) * 100))
+
+        # Clear per-page caches
+        _page_blocks_cache.clear()
 
         # Collect overlay info for every redaction on this page.
         # After apply_redactions() we re-draw them as shapes to guarantee

@@ -392,11 +392,25 @@ def detect_entities(
     chunks = _split_text(text)
     all_entities: List[Dict[str, str]] = []
 
-    for i, chunk in enumerate(chunks):
+    if len(chunks) >= 2:
+        # Process multiple chunks concurrently for faster analysis
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=min(4, len(chunks))) as pool:
+            futures = {
+                pool.submit(func, api_key, chunk, intensity, scope): i
+                for i, chunk in enumerate(chunks)
+            }
+            done = 0
+            for future in as_completed(futures):
+                all_entities.extend(future.result())
+                done += 1
+                if progress_callback:
+                    progress_callback(int((done / len(chunks)) * 100))
+    else:
         if progress_callback:
-            progress_callback(int((i / len(chunks)) * 100))
-        chunk_entities = func(api_key, chunk, intensity=intensity, scope=scope)
-        all_entities.extend(chunk_entities)
+            progress_callback(0)
+        for chunk in chunks:
+            all_entities.extend(func(api_key, chunk, intensity=intensity, scope=scope))
 
     if progress_callback:
         progress_callback(100)
